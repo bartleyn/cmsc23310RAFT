@@ -38,6 +38,7 @@ class Node:
     
     #RAFT sepecific terms
     self.state = "follower"
+    self.last_update = time.time()
     self.curr_term = 0
     self.voted_for = None
     self.commit_index = None #*** initial value?
@@ -84,11 +85,58 @@ class Node:
       self.req.send_json({'type': 'log', 'spam': msg})
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+  def handle_peerMsg(self, msg):
+    '''
+    if msg term > self.term:
+      self.term = term
+      self.state = "follower"
+      self.voted_for = None
+    delegate msg to appropriate handler
+    '''
+    return
+
+  def handle_requestVote(self, rv):
+    if self.state == follower:
+      pass
+    return
+
+  def handle_requestVoteReply(self, rvr):
+    return
+
+  def handle_appendEntries(self, ae):
+    '''
+    if ae_msg term < self.term: #reject
+      if voted_for 
+        self.state == "follower"
+
+    '''
+    return
+
+  def handle_appendEntriesReply(self, aer):
+    return
 
   def housekeeping(self): #handles election BS
-    curr_t = time.time()
-    if self.state == "follower" && curr_t - self.last_update > election_timeout: #case of no heartbeats
-      #
+    now = time.time()
+    if self.state == "follower" && now - self.last_update > election_timeout: #case of no heartbeats
+      ##call election
+
+    return
+  
+  def call_election(self):
+    '''
+    increment term
+    transition to candidate
+    vote for itself
+    issue request_vote RPC to peers
+    follow-up ***
+    '''
+    return
+
+  def broadcast_heartbeat(self):
+    '''
+    for peer in peers
+      send heartbeat to peer
+    '''
     return
 
 
