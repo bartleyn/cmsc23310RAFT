@@ -46,6 +46,12 @@ class Node:
     self.next_index = None #initialize upon becoming leader
     self.match_index = None # initialize upon becoming leader
 
+	# log code
+    self.log = []
+    # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
+    self.last_log_index = 0
+    self.last_log_term = None
+
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
       signal.signal(sig, self.shutdown)
@@ -70,8 +76,15 @@ class Node:
     msg = json.loads(msg_frames[2])
 
     if msg['type'] == 'get':
-      pass
+      	# If node not the Leader
+		# redirect client to LeaderID ( either send message to broker or forward to leader)
+	pass
     elif msg['type'] == 'set':
+	# If node not the Leader
+		# redirect client to LeaderID ( either send message to broker or forward to leader)
+	# option: send message to LeaderID, but with extra field saying 'forwarded'
+	# option: send message to LeaderID, but have leader treat it as if it came from client
+	#self.handle_appendEntries(msg)
       pass
     elif msg['type'] == 'hello':
       # should be the very first message we see
@@ -140,8 +153,29 @@ class Node:
     if leader:
       should never happen... (i.e. two leaders w/ same term)
       return?
-    self.role = follower
-    FILL IN
+        self.state == "follower"
+    		# if ( msg['term'] < self.curr_term )
+    			# send a response with 'yes' = false
+    			# break
+    		# if ( msg != {} ):
+    			#if (msg['leaderCommit'] != self.commit_index)
+    				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+    			#if ( len(self.log) < msg['prevLogIndex'] )
+    				# send a response with 'yes' = false
+    				# break
+    			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+    				# self.log = log[:msg['prevLogIndex']]
+    				# self.last_log_index = msg['prevLogIndex']
+    				# self.last_log_term = msg['prevLogTerm']
+    				# send a response with 'yes' = false
+    				# break
+    			# else
+    				# if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
+    					# self.log = self.log[:self.commit_index]
+    					# for e in msg['entries']:
+    						# self.log.append(e)
+    						# self.commit_index += 1
+    					# tbcontinued
     '''
     return
 
