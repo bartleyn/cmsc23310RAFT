@@ -41,6 +41,11 @@ class Node:
     next_index = None #initialize upon becoming leader
     match_index = None # initialize upon becoming leader
 
+	# log code
+    self.log = []
+    self.last_log_index = 0
+    self.last_log_term = None
+
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
       signal.signal(sig, self.shutdown)
@@ -65,8 +70,34 @@ class Node:
     msg = json.loads(msg_frames[2])
 
     if msg['type'] == 'get':
-      pass
+      	# If node not the Leader
+		# redirect client to LeaderID ( either send message to broker or forward to leader)
+	pass
     elif msg['type'] == 'set':
+	# If node not the Leader
+		# redirect client to LeaderID ( either send message to broker or forward to leader)
+	# option: send message to LeaderID, but with extra field saying 'forwarded'
+	# option: send message to LeaderID, but have leader treat it as if it came from client
+	# if ( follower )
+		# if ( msg['term'] < self.curr_term )
+			# send a response with 'yes' = false
+			# break
+		# if ( msg != {} ):
+			#if (msg['leaderCommit'] != self.commit_index)
+				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+			#if ( len(self.log) < msg['prevLogIndex'] )
+				# send a response with 'yes' = false
+				# break
+			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+				# self.log = log[:msg['prevLogIndex']]
+				# self.last_log_index = msg['prevLogIndex']
+				# self.last_log_term = msg['prevLogTerm']
+				# send a response with 'yes' = false
+				# break
+			# else
+					
+
+
       pass
     elif msg['type'] == 'hello':
       # should be the very first message we see
