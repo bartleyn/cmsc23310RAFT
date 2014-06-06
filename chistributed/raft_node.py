@@ -1,9 +1,13 @@
 import json
+import time
 import sys
 import signal
 import zmq
+from enum import Enum
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
+
+election_timeout = 0.5
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
@@ -33,13 +37,13 @@ class Node:
     self.store = {'foo': 'bar'} #*** change appropriately
     
     #RAFT sepecific terms
-    is_leader = False
+    self.state = "follower"
     self.curr_term = 0
     self.voted_for = None
-    commit_index = None #*** initial value?
-    last_applied = None #*** initial value?
-    next_index = None #initialize upon becoming leader
-    match_index = None # initialize upon becoming leader
+    self.commit_index = None #*** initial value?
+    self.last_applied = None #*** initial value?
+    self.next_index = None #initialize upon becoming leader
+    self.match_index = None # initialize upon becoming leader
 
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
@@ -80,6 +84,13 @@ class Node:
       self.req.send_json({'type': 'log', 'spam': msg})
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+
+  def housekeeping(self): #handles election BS
+    curr_t = time.time()
+    if self.state == "follower" && curr_t - self.last_update > election_timeout: #case of no heartbeats
+      #
+    return
+
 
   def send_spam(self):
     '''
