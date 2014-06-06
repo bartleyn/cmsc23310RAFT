@@ -48,6 +48,7 @@ class Node:
 
 	# log code
     self.log = []
+    # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
     self.last_log_index = 0
     self.last_log_term = None
 
@@ -137,7 +138,13 @@ class Node:
 				# self.last_log_term = msg['prevLogTerm']
 				# send a response with 'yes' = false
 				# break
-			# else ... tbcontinued
+			# else
+				# if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
+					# self.log = self.log[:self.commit_index]
+					# for e in msg['entries']:
+						# self.log.append(e)
+						# self.commit_index += 1
+					# tbcontinued
 
 
     '''
