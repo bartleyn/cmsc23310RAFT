@@ -96,23 +96,62 @@ class Node:
     return
 
   def handle_requestVote(self, rv):
-    if self.state == follower:
+    if self.state == "follower":
+      '''
+      if term < self.term:
+        send reply of false
+        return
+      if (self.voted_for == None or self.voted == self) && rv.log more up to date than self.log):
+        send reply of true
+        self.last_update = time.time()
+        return
+      send reply of false
+      return
+      '''
       pass
+    if self.state == "candidate" or self.state == "leader":
+      '''
+      send reply of false
+        return
+      '''
     return
 
   def handle_requestVoteReply(self, rvr):
+    '''
+    if leader:
+      ignore
+      return
+    if follower:
+      ignore
+    if candidate:
+      if success:
+        add to accepted
+      else: #failure
+        add to refused
+      if have qorum:
+        call function for beginning leadership
+    '''
     return
 
   def handle_appendEntries(self, ae):
     '''
     if ae_msg term < self.term: #reject
-      if voted_for 
-        self.state == "follower"
-
+      return
+    if leader:
+      should never happen... (i.e. two leaders w/ same term)
+      return?
+    self.role = follower
+    FILL IN
     '''
     return
 
   def handle_appendEntriesReply(self, aer):
+    '''
+    if leader:
+      if success:
+      else #failure:
+    FILL IN
+    '''
     return
 
   def housekeeping(self): #handles election BS
