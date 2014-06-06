@@ -83,26 +83,7 @@ class Node:
 		# redirect client to LeaderID ( either send message to broker or forward to leader)
 	# option: send message to LeaderID, but with extra field saying 'forwarded'
 	# option: send message to LeaderID, but have leader treat it as if it came from client
-	# if ( follower )
-		# if ( msg['term'] < self.curr_term )
-			# send a response with 'yes' = false
-			# break
-		# if ( msg != {} ):
-			#if (msg['leaderCommit'] != self.commit_index)
-				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-			#if ( len(self.log) < msg['prevLogIndex'] )
-				# send a response with 'yes' = false
-				# break
-			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
-				# self.log = log[:msg['prevLogIndex']]
-				# self.last_log_index = msg['prevLogIndex']
-				# self.last_log_term = msg['prevLogTerm']
-				# send a response with 'yes' = false
-				# break
-			# else
-					
-
-
+	#self.handle_appendEntries(msg)
       pass
     elif msg['type'] == 'hello':
       # should be the very first message we see
@@ -139,6 +120,25 @@ class Node:
     if ae_msg term < self.term: #reject
       if voted_for 
         self.state == "follower"
+
+	# if ( follower )
+		# if ( msg['term'] < self.curr_term )
+			# send a response with 'yes' = false
+			# break
+		# if ( msg != {} ):
+			#if (msg['leaderCommit'] != self.commit_index)
+				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+			#if ( len(self.log) < msg['prevLogIndex'] )
+				# send a response with 'yes' = false
+				# break
+			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+				# self.log = log[:msg['prevLogIndex']]
+				# self.last_log_index = msg['prevLogIndex']
+				# self.last_log_term = msg['prevLogTerm']
+				# send a response with 'yes' = false
+				# break
+			# else ... tbcontinued
+
 
     '''
     return
