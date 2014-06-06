@@ -47,6 +47,10 @@ class Node:
     self.next_index = None #initialize upon becoming leader
     self.match_index = None # initialize upon becoming leader
 
+    #things needed for Log Replication
+    self.appendVotes = [] #list of lists of names of nodes that have Replied to Append
+    self.logQueue = [] #list of dictionaries in same format as log that need to be replicated
+
 	# log code
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
@@ -147,13 +151,26 @@ class Node:
     '''
     return
 
+  def handle_setRequest(self,sr):
+    '''
+    if leader:
+      add request to logQueue
+      create empty list in appendVotes for voting
+      send appendEntries to all followers
+    elif leaderExists:
+      redirect message to leader   
+    else:
+      send noLeader error to client
+    '''
+    return
+
   def handle_appendEntries(self, ae):
     '''
     if ae_msg term < self.term: #reject
       return
     if leader:
       should never happen... (i.e. two leaders w/ same term)
-      return?
+      return? error?
     self.state == "follower"
 		# if ( msg['term'] < self.curr_term )
 			# send a response with 'yes' = false
@@ -179,14 +196,18 @@ class Node:
 					# tbcontinued
     '''
     return
-
+  
   def handle_appendEntriesReply(self, aer):
     '''
     if leader:
-      if success:
-      else #failure:
-    FILL IN
-    '''
+      add vote to appendVotes
+      if success: #if majority followers have responded
+        comit value to log
+        send commit messages to all folowers
+        
+    else: # this should not happen
+      return error?
+      '''   
     return
 
   def housekeeping(self): #handles election BS
@@ -230,7 +251,6 @@ class Node:
       send heartbeat to peer
     '''
     return
-
 
   def send_spam(self):
     '''
