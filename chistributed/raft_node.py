@@ -83,6 +83,9 @@ class Node:
     if msg['type'] == 'get':
       	# If node not the Leader
 		# redirect client to LeaderID ( either send message to broker or forward to leader)
+	# else
+		# send response with the value self.store[msg[key]]
+		#self.send_message('getResponse', self.name, msg['source'], true, msg['key'], self.store[msg['key']], msg['id'])
 	pass
     elif msg['type'] == 'set':
 	# If node not the Leader
@@ -171,32 +174,57 @@ class Node:
     if leader:
       should never happen... (i.e. two leaders w/ same term)
       return? error?
-    self.state == "follower"
-		# if ( msg['term'] < self.curr_term )
-			# send a response with 'yes' = false
-			# break
-		# if ( msg != {} ):
-			#if (msg['leaderCommit'] != self.commit_index)
-				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-			#if ( len(self.log) < msg['prevLogIndex'] )
-				# send a response with 'yes' = false
-				# break
-			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
-				# self.log = log[:msg['prevLogIndex']]
-				# self.last_log_index = msg['prevLogIndex']
-				# self.last_log_term = msg['prevLogTerm']
-				# send a response with 'yes' = false
-				# break
-			# else
-				# if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
-					# self.log = self.log[:self.commit_index]
-					# for e in msg['entries']:
-						# self.log.append(e)
-						# self.commit_index += 1
-					# tbcontinued
+    if self.state == "follower":
+	 if ( msg['term'] < self.curr_term )
+		self.send_message('log', msg)
+		self.send_message('appendEntriesReply', self.name, msg['source'], false)
+			break
+		if ( msg != {} ):
+			if (msg['leaderCommit'] != self.commit_index)
+				 self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+			if ( len(self.log) < msg['prevLogIndex'] )
+				self.send_message('log', msg)
+				self.send_message('appendEntriesReply', self.name, msg['source'], false)
+				break
+			if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+				 self.log = log[:msg['prevLogIndex']]
+				 self.last_log_index = msg['prevLogIndex']
+				 self.last_log_term = msg['prevLogTerm']
+				 self.send_message('log', msg)
+				 self.send_message('appendEntriesReply', self.name, msg['source'], false)
+				 break
+			 else
+				if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
+					 self.log = self.log[:self.commit_index]
+					 for e in msg['entries']:
+						 self.log.append(e)
+						 self.commit_index += 1
+					 self.last_log_index = len(log) - 1
+					 self.last_log_term = log[-1]['term']
+					 self.commit_index = len(log) -1 
+					self.send_message('appendEntriesReply', self.name, msg['source'], true, msg)
+					self.send_message('log', msg)	
+			self.send_message('appendEntriesReply', self.name, msg['source'], true)
+			self.send_message('log', msg)
+			return 
+		 else 
+			return
+
+
     '''
     return
-  
+ 
+  def send_message(self, type, msg):
+	if type == 'log':
+		self.req.send_json({'type': type, 'msg': msg})
+	return
+
+  def send_message(self, type, src, dst, yes, key, value, id, msg):
+	self.req.send_json({'type': type, 'yes': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
+  def send_message(self, type, src='', dst='', yes=true,  msg=None ):
+	self.req.send_json({'type': type, 'yes': yes,  'source': src, 'dest': dst, 'term': self.curr_term})
+	return
+
   def handle_appendEntriesReply(self, aer):
     '''
     if leader:
@@ -252,6 +280,19 @@ class Node:
     '''
     return
 
+  def apply_commits(self):
+	'''
+	if self.commit_index > self.last_applied:
+		self.last_applied += 1
+		entry = self.log[self.last_applied]
+		key = entry['key']
+		value = entry['value']
+		self.store[key] = value		
+
+	commit each log entry until the next commit index
+	'''
+	return
+
   def send_spam(self):
     '''
     Periodically send spam, with a counter to see which are dropped.
@@ -272,7 +313,8 @@ class Node:
 if __name__ == '__main__':
   import argparse
   parser = argparse.ArgumentParser()
-  parser.add_argument('--pub-endpoint',
+
+			return   parser.add_argument('--pub-endpoint',
       dest='pub_endpoint', type=str,
       default='tcp://127.0.0.1:23310')
   parser.add_argument('--router-endpoint',
