@@ -46,10 +46,14 @@ class Node:
     self.last_applied = None #*** initial value?
     self.next_index = None #initialize upon becoming leader
     self.match_index = None # initialize upon becoming leader
-
+    
+    #other things?
+    self.leaderId = None # adress of curent leader
+    
     #things needed for Log Replication
-    self.appendVotes = [] #list of lists of names of nodes that have Replied to Append
-    self.logQueue = [] #list of dictionaries in same format as log that need to be replicated
+    self.appendVotes = {} #dictionary maping keys to lists of nodes that have Replied to Append
+    self.logQueue = {} #dictionary in same format as log that need to be replicated
+    # self.majority = (len(peer_Names)+1)/2+1 #number of votes needed for majority
 
 	# log code
     self.log = []
@@ -85,11 +89,7 @@ class Node:
 		# redirect client to LeaderID ( either send message to broker or forward to leader)
 	pass
     elif msg['type'] == 'set':
-	# If node not the Leader
-		# redirect client to LeaderID ( either send message to broker or forward to leader)
-	# option: send message to LeaderID, but with extra field saying 'forwarded'
-	# option: send message to LeaderID, but have leader treat it as if it came from client
-	#self.handle_appendEntries(msg)
+      #self.handle_set(self,msg)
       pass
     elif msg['type'] == 'hello':
       # should be the very first message we see
@@ -151,16 +151,21 @@ class Node:
     '''
     return
 
-  def handle_setRequest(self,sr):
+  def handle_set(self,s):
     '''
     if leader:
-      add request to logQueue
-      create empty list in appendVotes for voting
-      send appendEntries to all followers
-    elif leaderExists:
-      redirect message to leader   
+      self.logQueue[s.key] = s.value #add request to queue
+      self.appendVotes[s.key] = () #make room to record replies
+      self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
+      self.req.send_json({"type": appendEntries, "destination": peer_list "term": self.curr_term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
+      elif self.checkLeader:
+      # option: send message to LeaderID, but with extra field saying 'forwarded'
+      # option: send message to LeaderID, but have leader treat it as if it came from client
+      # I'm going with no extra field, but since set messages are only sent by the broker, I am calling it a forwardedSet message
+      self.req.send_json({"type": "forwardedSet", "destination": leaderId, "key": s.key, "value": s.value})
+      self.req.send_json({"type": "setResponce", "value": s.value}) #if the leader crashes this might cause problems
     else:
-      send noLeader error to client
+      self.req.send_json({"type": "setResponce", "error": "No Leader currently exists, please wait and try again"})
     '''
     return
 
@@ -200,14 +205,19 @@ class Node:
   def handle_appendEntriesReply(self, aer):
     '''
     if leader:
-      add vote to appendVotes
-      if success: #if majority followers have responded
-        comit value to log
-        send commit messages to all folowers
-        
-    else: # this should not happen
-      return error?
-      '''   
+      if aer.success:
+        if self.appendVotes.has_key(aer.key): 
+          if aer.name not in self.appendVotes[aer.key]: #dont allow repeat voting
+            self.appendVotes[aer.key].append(aer.source)
+            if len(self.appendVotes[aer.key]) = majority : #if majority followers have responded
+              self.log[self.curr_term][aer.key] = aer.value # comit value to log
+              #send commit messages
+              #should we bother removing from logqueue and appendvotes here?
+      else: #not sucess
+        #force follower to copy log
+    else:
+      print "Warning, " + self.name + "recieved appendEntriesReply while not leader"
+    '''   
     return
 
   def housekeeping(self): #handles election BS
