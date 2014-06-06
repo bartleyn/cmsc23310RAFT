@@ -7,7 +7,8 @@ from enum import Enum
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
-election_timeout = 0.5
+base_election_timeout = 0.5
+polling_timeout = 0.1
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
@@ -190,9 +191,23 @@ class Node:
 
   def housekeeping(self): #handles election BS
     now = time.time()
-    if self.state == "follower" && now - self.last_update > election_timeout: #case of no heartbeats
-      ##call election
-
+    elapsed = 
+    if self.state == "follower" && now - self.last_update > base_election_timeout: #case of no heartbeats
+      self.call_election()
+      self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+    elif self.state == "candidate"
+      if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
+        #if rejected < qorum #still chance of winning; poll more votes
+          #self.poll
+          #self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+        #else: #no chance of winning election
+          #self.loop.add_timeout(self.election_timeout, self.housekeeping)
+      else: # election timeout has occurred
+        self.call_election()
+        self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+    else: #case leader
+      self.broadcast_heartbeat()
+      self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
     return
   
   def call_election(self):
@@ -203,6 +218,10 @@ class Node:
     issue request_vote RPC to peers
     follow-up ***
     '''
+    return
+
+  def poll(self):
+    #for all nodes not in accepted or rejected issue RV 
     return
 
   def broadcast_heartbeat(self):
