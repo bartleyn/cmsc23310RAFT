@@ -153,29 +153,29 @@ class Node:
     if leader:
       should never happen... (i.e. two leaders w/ same term)
       return?
-        self.state == "follower"
-    		# if ( msg['term'] < self.curr_term )
-    			# send a response with 'yes' = false
-    			# break
-    		# if ( msg != {} ):
-    			#if (msg['leaderCommit'] != self.commit_index)
-    				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-    			#if ( len(self.log) < msg['prevLogIndex'] )
-    				# send a response with 'yes' = false
-    				# break
-    			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
-    				# self.log = log[:msg['prevLogIndex']]
-    				# self.last_log_index = msg['prevLogIndex']
-    				# self.last_log_term = msg['prevLogTerm']
-    				# send a response with 'yes' = false
-    				# break
-    			# else
-    				# if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
-    					# self.log = self.log[:self.commit_index]
-    					# for e in msg['entries']:
-    						# self.log.append(e)
-    						# self.commit_index += 1
-    					# tbcontinued
+    self.state == "follower"
+		# if ( msg['term'] < self.curr_term )
+			# send a response with 'yes' = false
+			# break
+		# if ( msg != {} ):
+			#if (msg['leaderCommit'] != self.commit_index)
+				# self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+			#if ( len(self.log) < msg['prevLogIndex'] )
+				# send a response with 'yes' = false
+				# break
+			#if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+				# self.log = log[:msg['prevLogIndex']]
+				# self.last_log_index = msg['prevLogIndex']
+				# self.last_log_term = msg['prevLogTerm']
+				# send a response with 'yes' = false
+				# break
+			# else
+				# if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
+					# self.log = self.log[:self.commit_index]
+					# for e in msg['entries']:
+						# self.log.append(e)
+						# self.commit_index += 1
+					# tbcontinued
     '''
     return
 
@@ -199,7 +199,7 @@ class Node:
     '''
     increment term
     transition to candidate
-    vote for itself
+    vote for self
     issue request_vote RPC to peers
     follow-up ***
     '''
