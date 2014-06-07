@@ -41,8 +41,8 @@ class Node:
     self.last_update = time.time()
     self.curr_term = 0
     self.voted_for = None
-    self.commit_index = None #*** initial value?
-    self.last_applied = None #*** initial value?
+    self.commit_index = 0 #*** initial value?
+    self.last_applied = 0 #*** initial value?
     self.next_index = None #initialize upon becoming leader
     self.match_index = None # initialize upon becoming leader
     
@@ -89,7 +89,7 @@ class Node:
     elif msg['type'] == 'set':
       self.handle_set(msg)      
     elif msg['type'] == 'spam':
-      self.req.send_json({'type': 'log', 'spam': msg})
+      self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
     else:
       handle_peerMsg(msg)
     return
@@ -100,8 +100,8 @@ class Node:
       self.connected = True
       self.req.send_json({'type': 'helloResponse', 'source': self.name})
       # if we're a spammer, start spamming!
-      if self.spammer:
-        self.loop.add_callback(self.send_spam)
+      #if self.spammer:
+      #  self.loop.add_callback(self.send_spam)
 
 
   def handle_get(self, msg):
@@ -109,24 +109,24 @@ class Node:
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
-      #self.send_message('getResponse', self.name, msg['source'], true, msg['key'], self.store[msg['key']], msg['id'])
-
+      #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
+	pass
   def handle_set(self,s):
-    '''
+   
     if leader:
-      self.logQueue[s.key] = s.value #add request to queue
-      self.appendVotes[s.key] = () #make room to record replies
-      self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
-      self.req.send_json({"type": appendEntries, "destination": peer_list "term": self.curr_term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
-      elif self.checkLeader:
+        self.logQueue[s.key] = s.value #add request to queue
+        self.appendVotes[s.key] = () #make room to record replies
+      	self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
+      	self.req.send_json({"type": 'appendEntries', "destination": peer_list, "term": self.curr_term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
+    elif self.checkLeader:
       # option: send message to LeaderID, but with extra field saying 'forwarded'
       # option: send message to LeaderID, but have leader treat it as if it came from client
       # I'm going with no extra field, but since set messages are only sent by the broker, I am calling it a forwardedSet message
-      self.req.send_json({"type": "forwardedSet", "destination": leaderId, "key": s.key, "value": s.value})
-      self.req.send_json({"type": "setResponce", "value": s.value}) #if the leader crashes this might cause problems
+      	self.req.send_json({"type": "forwardedSet", "destination": leaderId, "key": s.key, "value": s.value})
+      	self.req.send_json({"type": "setResponce", "value": s.value}) #if the leader crashes this might cause problems
     else:
-      self.req.send_json({"type": "setResponce", "error": "No Leader currently exists, please wait and try again"})
-    '''
+      	self.req.send_json({"type": "setResponce", "error": "No Leader currently exists, please wait and try again"})
+    
     return
 
 
@@ -153,7 +153,7 @@ class Node:
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':[rv['source']], 'voteGranted': False})
         return
-      elif (self.voted_for == None or self.voted_for == self.name) && (rv['lastLogTerm'] >= self.last_log_term && rv['lastLogIndex'] >= self.last_log_index):
+      elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':[rv['source']], 'voteGranted': True})
         self.last_update = time.time()
@@ -168,6 +168,7 @@ class Node:
     return
 
   def handle_requestVoteReply(self, rvr):
+    '''
     if self.state == "candidate": #case candidate
       if success:
         add to accepted
@@ -176,6 +177,7 @@ class Node:
       if have qorum:
         call function for beginning leadership
     #otherwise ignore
+    '''
     return
 
   def handle_appendEntries(self, ae):
@@ -213,9 +215,9 @@ class Node:
 					 self.last_log_index = len(log) - 1
 					 self.last_log_term = log[-1]['term']
 					 self.commit_index = len(log) -1 
-					self.send_message('appendEntriesReply', self.name, msg['source'], true, msg)
+					self.send_message('appendEntriesReply', self.name, msg['source'], True, msg)
 					self.send_message('log', msg)	
-			self.send_message('appendEntriesReply', self.name, msg['source'], true)
+			self.send_message('appendEntriesReply', self.name, msg['source'], True)
 			self.send_message('log', msg)
 			return 
 		 else 
@@ -232,7 +234,7 @@ class Node:
 
   def send_message(self, type, src, dst, yes, key, value, id, msg):
 	self.req.send_json({'type': type, 'success': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
-  def send_message(self, type, src='', dst='', yes=true,  msg=None ):
+  def send_message(self, type, src='', dst='', yes=True,  msg=None ):
 	self.req.send_json({'type': type, 'success': yes,  'source': src, 'dest': dst, 'term': self.curr_term})
 	return
 
@@ -261,6 +263,7 @@ class Node:
     return
 
   def housekeeping(self): #handles election BS
+    '''
     now = time.time()
     elapsed = 
     if self.state == "follower" && now - self.last_update > base_election_timeout: #case of no heartbeats
@@ -279,6 +282,7 @@ class Node:
     else: #case leader
       self.broadcast_heartbeat()
       self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
+    '''
     return
   
   def call_election(self):
@@ -336,7 +340,7 @@ if __name__ == '__main__':
   import argparse
   parser = argparse.ArgumentParser()
 
-			return   parser.add_argument('--pub-endpoint',
+  parser.add_argument('--pub-endpoint',
       dest='pub_endpoint', type=str,
       default='tcp://127.0.0.1:23310')
   parser.add_argument('--router-endpoint',
