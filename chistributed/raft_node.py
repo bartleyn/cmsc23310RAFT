@@ -162,37 +162,39 @@ class Node:
       if rv['term'] < self.term:
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':rv['source'], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
         return
       elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER WE CAN VOTE FOR THEM', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination': rv['source'], 'voteGranted': True})
+          'destination': rv['source'], 'voteGranted': True, 'term' : self.term})
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE VOTE GRANTED', 'node': self.name}})
         self.last_update = self.loop.time()
       else:
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWE WE VOTED OR THEY HAVE INVALID LOG', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':rv['source'], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
       return
 
     else: # self.state == "candidate" or self.state == "leader":
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE NOT FOLLOWER', 'node': self.name}})
       self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':rv['source'], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
     return
 
   def handle_requestVoteReply(self, rvr):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
     if self.state == "candidate": #case candidate
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
       if rvr['voteGranted'] == True:
-        if rv['source'] not in self.accepted:
-          self.accepted.append(rv['source'])
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE VOTE GRANTED', 'node': self.name}})
+        if (rvr['source'] not in self.accepted):
+          self.accepted.append(rvr['source'])
+          if len(self.accepted) >= self.qorum:
+            self.begin_term()
       else:
-        if rv['source'] not in self.refused:
-          self.refused.append(rv['source'])
-      if len(self.accepted) >= self.qorum:
-        self.begin_term()
+        if rvr['source'] not in self.refused:
+          self.refused.append(rvr['source'])
     #otherwise ignore
     return
 
@@ -322,6 +324,8 @@ class Node:
     return
 
   def begin_term(self):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
+    self.state = "leader"
     self.next_index = {}
     self.match_index = {}
     #send append entries RPC to all others
