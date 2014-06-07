@@ -136,13 +136,13 @@ class Node:
       self.term = msg_term
       self.state = "follower"
       self.voted_for = None
-    if msg['type'] == 'request vote':
+    if msg['type'] == 'requestVote':
       self.handle_requestVote(msg)
-    elif msg['type'] == 'append entries':
+    elif msg['type'] == 'appendEntries':
       self.handle_appendEntries(msg)
-    elif msg['type'] == 'request vote reply':
+    elif msg['type'] == 'requestVoteReply':
       self.handle_requestVoteReply(msg)
-    elif msg['type'] == 'append entries reply':
+    elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
@@ -207,7 +207,7 @@ class Node:
 			 else
 				if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
 					 self.log = self.log[:self.commit_index]
-					 for e in msg['entries']:
+					 for entry in msg['entries']:
 						 self.log.append(e)
 						 self.commit_index += 1
 					 self.last_log_index = len(log) - 1
@@ -231,9 +231,9 @@ class Node:
 	return
 
   def send_message(self, type, src, dst, yes, key, value, id, msg):
-	self.req.send_json({'type': type, 'yes': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
+	self.req.send_json({'type': type, 'success': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
   def send_message(self, type, src='', dst='', yes=true,  msg=None ):
-	self.req.send_json({'type': type, 'yes': yes,  'source': src, 'dest': dst, 'term': self.curr_term})
+	self.req.send_json({'type': type, 'success': yes,  'source': src, 'dest': dst, 'term': self.curr_term})
 	return
 
   def handle_appendEntriesReply(self, aer):
@@ -241,11 +241,17 @@ class Node:
     if leader:
       if aer.success:
         if self.appendVotes.has_key(aer.key): 
+	     # V is this supposed to be the source name or dest name? I'm assuming source
           if aer.name not in self.appendVotes[aer.key]: #dont allow repeat voting
             self.appendVotes[aer.key].append(aer.source)
             if len(self.appendVotes[aer.key]) = majority : #if majority followers have responded
               self.log[self.curr_term][aer.key] = aer.value # comit value to log
-              #send commit messages
+		# ^ I think this line will look more like this:
+	      self.log.append({'term': self.curr_term, aer.key: aer.value})
+	      self.last_log_index += 1
+	      self.last_log_term = self.curr_term
+	      # and then anything else we need to update
+		#send commit messages
               #should we bother removing from logqueue and appendvotes here?
       else: #not sucess
         #force follower to copy log
