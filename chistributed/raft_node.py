@@ -43,8 +43,10 @@ class Node:
     self.voted_for = None
     self.commit_index = 0 #*** initial value?
     self.last_applied = 0 #*** initial value?
-    self.next_index = None #initialize upon becoming leader
-    self.match_index = None # initialize upon becoming leader
+    self.next_index = None
+    #re-initialize upon election: dictionary mapping node namer to index of the next log entry to send to that server
+    self.match_index = None
+    #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     
     #other things?
     self.leaderId = None # adress of curent leader
@@ -52,13 +54,13 @@ class Node:
     #things needed for Log Replication
     self.appendVotes = {} #dictionary maping keys to lists of nodes that have Replied to Append
     self.logQueue = {} #dictionary in same format as log that need to be replicated
-    # self.majority = (len(peer_Names)+1)/2+1 #number of votes needed for majority
 
 	# log code
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
     self.last_log_index = 0
     self.last_log_term = 0
+    self.qorum = (len(peer_names) + 1)/2 + 1
 
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
@@ -175,7 +177,7 @@ class Node:
       else:
         if rv['source'] not in self.refused:
           self.refused.append(rv['source'])
-      if len(self.accepted) >= qorum:
+      if len(self.accepted) >= self.qorum:
         self.begin_term()
     #otherwise ignore
     return
@@ -263,26 +265,23 @@ class Node:
     return
 
   def housekeeping(self): #handles election BS
-    '''
     now = time.time()
-    elapsed = 
-    if self.state == "follower" && now - self.last_update > base_election_timeout: #case of no heartbeats
+    if self.state == "follower" and now - self.last_update > base_election_timeout: #case of no heartbeats
       self.call_election()
       self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
-    elif self.state == "candidate"
+    elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
-        #if rejected < qorum #still chance of winning; poll more votes
-          #self.poll
-          #self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
-        #else: #no chance of winning election
-          #self.loop.add_timeout(self.election_timeout, self.housekeeping)
+        if len(self.refused) < self.qorum: #still chance of winning; poll more votes
+          self.poll()
+          self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+        else: #no chance of winning election
+          self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
       self.broadcast_heartbeat()
       self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
-    '''
     return
   
   def call_election(self):
@@ -296,13 +295,15 @@ class Node:
  
   def poll(self):
     for name in self.peer_names:
-      if (name not in self.refused) && (name not in self.accepted):
+      if (name not in self.refused) and (name not in self.accepted):
         self.req.send_json({'type': 'requestVote', 'source': self.name, 
-          'destination':name], 'term': self.term, 'lastlogIndex': self.last_log_index, 
+          'destination': name, 'term': self.term, 'lastlogIndex': self.last_log_index, 
           'lastlogTerm': self.last_log_term})
     return
 
   def begin_term(self):
+    self.next_index = {}
+    self.match_index = {}
     #send append entries RPC to all others
     return
 
