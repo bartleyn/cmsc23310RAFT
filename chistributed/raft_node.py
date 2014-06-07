@@ -104,7 +104,7 @@ class Node:
     if not self.connected:
       self.connected = True
       self.req.send_json({'type': 'helloResponse', 'source': self.name})
-      self.housekeeping()
+      self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
       # if we're a spammer, start spamming!
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
@@ -152,42 +152,43 @@ class Node:
     elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
     else:
-      self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
 
   def handle_requestVote(self, rv):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
     if self.state == "follower":
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
         return
       elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER WE CAN VOTE FOR THEM', 'node': self.name}})
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER WE CAN VOTE FOR THEM', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination': rv['source'], 'voteGranted': True, 'term' : self.term})
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE VOTE GRANTED', 'node': self.name}})
+        self.voted_for = rv['source']
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE VOTE GRANTED', 'node': self.name}})
         self.last_update = self.loop.time()
       else:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWE WE VOTED OR THEY HAVE INVALID LOG', 'node': self.name}})
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWE WE VOTED OR THEY HAVE INVALID LOG', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
       return
 
     else: # self.state == "candidate" or self.state == "leader":
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE NOT FOLLOWER', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE NOT FOLLOWER', 'node': self.name}})
       self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
     return
 
   def handle_requestVoteReply(self, rvr):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
     if self.state == "candidate": #case candidate
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
       if rvr['voteGranted'] == True:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE VOTE GRANTED', 'node': self.name}})
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE VOTE GRANTED', 'node': self.name}})
         if (rvr['source'] not in self.accepted):
           self.accepted.append(rvr['source'])
           if len(self.accepted) >= self.qorum:
@@ -199,43 +200,45 @@ class Node:
     return
 
   def handle_appendEntries(self, ae):
-    if msg['term'] < self.term:
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
+    if ae['term'] < self.term:
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM LESS THAN OURS', 'node': self.name}})
+      self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
+          'destination': ae['source'], 'success': False, 'term' : self.term})
+      return
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM VALID', 'node': self.name}})
+    self.state = "follower"
+    self.last_update = self.loop.time()
+    '''
+    if (msg['leaderCommit'] != self.commit_index)
+       self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+    if ( len(self.log) < msg['prevLogIndex'] )
       self.send_message('log', msg)
       self.send_message('appendEntriesReply', self.name, msg['source'], false)
-      return
-    if self.state == "follower":
-      self.last_update = self.loop.time()
-      '''
-      if (msg['leaderCommit'] != self.commit_index)
-         self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-      if ( len(self.log) < msg['prevLogIndex'] )
-        self.send_message('log', msg)
-        self.send_message('appendEntriesReply', self.name, msg['source'], false)
-        break
-      if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
-         self.log = log[:msg['prevLogIndex']]
-         self.last_log_index = msg['prevLogIndex']
-         self.last_log_term = msg['prevLogTerm']
-         self.send_message('log', msg)
-         self.send_message('appendEntriesReply', self.name, msg['source'], false)
-         break
-       else
-        if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
-           self.log = self.log[:self.commit_index]
-           for entry in msg['entries']:
-             self.log.append(e)
-             self.commit_index += 1
-           self.last_log_index = len(log) - 1
-           self.last_log_term = log[-1]['term']
-           self.commit_index = len(log) -1 
-          self.send_message('appendEntriesReply', self.name, msg['source'], True, msg)
-          self.send_message('log', msg) 
-      self.send_message('appendEntriesReply', self.name, msg['source'], True)
-      self.send_message('log', msg)
-      return
-      '''
-    else: #case leader or candidate
-      return
+      break
+    if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
+       self.log = log[:msg['prevLogIndex']]
+       self.last_log_index = msg['prevLogIndex']
+       self.last_log_term = msg['prevLogTerm']
+       self.send_message('log', msg)
+       self.send_message('appendEntriesReply', self.name, msg['source'], false)
+       break
+     else
+      if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
+         self.log = self.log[:self.commit_index]
+         for entry in msg['entries']:
+           self.log.append(e)
+           self.commit_index += 1
+         self.last_log_index = len(log) - 1
+         self.last_log_term = log[-1]['term']
+         self.commit_index = len(log) -1 
+        self.send_message('appendEntriesReply', self.name, msg['source'], True, msg)
+        self.send_message('log', msg) 
+    self.send_message('appendEntriesReply', self.name, msg['source'], True)
+    self.send_message('log', msg)
+    return
+    '''
+    return
   '''
   def send_message(self, type, msg):
   if type == 'log':
@@ -275,10 +278,10 @@ class Node:
 
   def housekeeping(self): #handles election BS
     now = self.loop.time()
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING TOP LEVEL', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING TOP LEVEL', 'node': self.name}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name}})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name, 'now': now, "last update" : self.last_update}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
       else:
@@ -291,20 +294,21 @@ class Node:
           self.poll()
           self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
         else: #no chance of winning election
-          self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
+          #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
       self.broadcast_heartbeat()
-      self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER FINISHED BROADCAST', 'node': self.name}})
+      self.loop.add_timeout(now + heartbeat_timeout, self.housekeeping)
     return
   
   def call_election(self):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
     self.term += 1
     self.state = "candidate"
     self.accepted = []
@@ -315,7 +319,7 @@ class Node:
     return
  
   def poll(self):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'POLL', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'POLL', 'node': self.name}})
     for peer in self.peer_names:
       if (peer not in self.refused) and (peer not in self.accepted):
         self.req.send_json({'type': 'requestVote', 'source': self.name, 
@@ -324,7 +328,7 @@ class Node:
     return
 
   def begin_term(self):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
     self.state = "leader"
     self.next_index = {}
     self.match_index = {}
@@ -332,7 +336,8 @@ class Node:
     return
 
   def broadcast_heartbeat(self):
-    for peer in peer_names:
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
+    for peer in self.peer_names:
       self.req.send_json({'type': 'appendEntries', 'source': self.name, 
           'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
           'prevLogTerm': 0, 'entries': None, 'leaderCommit': self.commit_index}) #*** this needs to be changed to reflect actual AE RPCs

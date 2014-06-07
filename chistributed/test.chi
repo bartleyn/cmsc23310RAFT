@@ -1,0 +1,2 @@
+start A --peer-names B
+start B --peer-names A
