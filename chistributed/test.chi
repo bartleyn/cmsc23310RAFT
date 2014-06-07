@@ -1,2 +1,3 @@
-start A --peer-names B
-start B --peer-names A
+start A --peer-names B,C
+start B --peer-names A,C
+start C --peer-names A,B

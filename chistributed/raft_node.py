@@ -152,12 +152,12 @@ class Node:
     elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
     else:
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+      self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+
 
   def handle_requestVote(self, rv):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
     if self.state == "follower":
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
         #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
@@ -281,11 +281,11 @@ class Node:
     #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING TOP LEVEL', 'node': self.name}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name, 'now': now, "last update" : self.last_update}})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
       else:
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER NO TIMEOUT', 'node': self.name}})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER NO TIMEOUT', 'node': self.name}})
         self.loop.add_timeout(self.last_update + term_timeout, self.housekeeping)
     elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
@@ -308,7 +308,7 @@ class Node:
     return
   
   def call_election(self):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
     self.term += 1
     self.state = "candidate"
     self.accepted = []
@@ -328,7 +328,7 @@ class Node:
     return
 
   def begin_term(self):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
     self.state = "leader"
     self.next_index = {}
     self.match_index = {}

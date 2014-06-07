@@ -72,6 +72,7 @@ class Node:
       if not self.connected:
         self.connected = True
         self.req.send_json({'type': 'helloResponse', 'source': self.name})
+        self.loop.add_callback(self.housekeeping
         # if we're a spammer, start spamming!
         if self.spammer:
           self.loop.add_callback(self.send_spam)
