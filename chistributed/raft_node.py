@@ -291,14 +291,14 @@ class Node:
           self.poll()
           self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
         else: #no chance of winning election
-          elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
+          self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
-        elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
-      elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
       self.broadcast_heartbeat()
       self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
     return
