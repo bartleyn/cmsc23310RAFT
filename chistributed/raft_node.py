@@ -3,7 +3,6 @@ import time
 import sys
 import signal
 import zmq
-from enum import Enum
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
@@ -59,7 +58,7 @@ class Node:
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
     self.last_log_index = 0
-    self.last_log_term = None
+    self.last_log_term = 0
 
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
@@ -83,76 +82,34 @@ class Node:
     assert msg_frames[0] == self.name
     # Second field is the empty delimiter
     msg = json.loads(msg_frames[2])
-
-    if msg['type'] == 'get':
-      	# If node not the Leader
-		# redirect client to LeaderID ( either send message to broker or forward to leader)
-	# else
-		# send response with the value self.store[msg[key]]
-		#self.send_message('getResponse', self.name, msg['source'], true, msg['key'], self.store[msg['key']], msg['id'])
-	pass
+    if msg['type'] == 'hello':
+      self.handle_hello(msg)
+    elif msg['type'] == 'get':
+      self.handle_get(msg)
     elif msg['type'] == 'set':
-      #self.handle_set(self,msg)
-      pass
-    elif msg['type'] == 'hello':
-      # should be the very first message we see
-      if not self.connected:
-        self.connected = True
-        self.req.send_json({'type': 'helloResponse', 'source': self.name})
-        # if we're a spammer, start spamming!
-        if self.spammer:
-          self.loop.add_callback(self.send_spam)
+      self.handle_set(msg)      
     elif msg['type'] == 'spam':
       self.req.send_json({'type': 'log', 'spam': msg})
     else:
-      self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
-  def handle_peerMsg(self, msg):
-    '''
-    if msg term > self.term:
-      self.term = term
-      self.state = "follower"
-      self.voted_for = None
-    delegate msg to appropriate handler
-    '''
+      handle_peerMsg(msg)
     return
+  
+  def handle_hello(self, msg):
+    # should be the very first message we see
+    if not self.connected:
+      self.connected = True
+      self.req.send_json({'type': 'helloResponse', 'source': self.name})
+      # if we're a spammer, start spamming!
+      if self.spammer:
+        self.loop.add_callback(self.send_spam)
 
-  def handle_requestVote(self, rv):
-    if self.state == "follower":
-      '''
-      if term < self.term:
-        send reply of false
-        return
-      if (self.voted_for == None or self.voted == self) && rv.log more up to date than self.log):
-        send reply of true
-        self.last_update = time.time()
-        return
-      send reply of false
-      return
-      '''
-      pass
-    if self.state == "candidate" or self.state == "leader":
-      '''
-      send reply of false
-        return
-      '''
-    return
 
-  def handle_requestVoteReply(self, rvr):
-    '''
-    if leader:
-      ignore
-      return
-    if follower:
-      ignore
-    if candidate:
-      if success:
-        add to accepted
-      else: #failure
-        add to refused
-      if have qorum:
-        call function for beginning leadership
-    '''
-    return
+  def handle_get(self, msg):
+    #If node not the Leader
+      #redirect client to LeaderID ( either send message to broker or forward to leader)
+    #else
+      #send response with the value self.store[msg[key]]
+      #self.send_message('getResponse', self.name, msg['source'], true, msg['key'], self.store[msg['key']], msg['id'])
 
   def handle_set(self,s):
     '''
@@ -170,6 +127,55 @@ class Node:
     else:
       self.req.send_json({"type": "setResponce", "error": "No Leader currently exists, please wait and try again"})
     '''
+    return
+
+
+  def handle_peerMsg(self, msg):
+    msg_term = msg['term']
+    if  msg_term > self.term:
+      self.term = msg_term
+      self.state = "follower"
+      self.voted_for = None
+    if msg['type'] == 'request vote':
+      self.handle_requestVote(msg)
+    elif msg['type'] == 'append entries':
+      self.handle_appendEntries(msg)
+    elif msg['type'] == 'request vote reply':
+      self.handle_requestVoteReply(msg)
+    elif msg['type'] == 'append entries reply':
+      self.handle_appendEntriesReply(msg)
+    else:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+
+  def handle_requestVote(self, rv):
+    if self.state == "follower":
+      if rv['term'] < self.term:
+        self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
+          'destination':[rv['source']], 'voteGranted': False})
+        return
+      elif (self.voted_for == None or self.voted_for == self.name) && (rv['lastLogTerm'] >= self.last_log_term && rv['lastLogIndex'] >= self.last_log_index):
+        self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
+          'destination':[rv['source']], 'voteGranted': True})
+        self.last_update = time.time()
+      else:
+        self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
+          'destination':[rv['source']], 'voteGranted': False})
+      return
+
+    else: # self.state == "candidate" or self.state == "leader":
+      self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
+          'destination':[rv['source']], 'voteGranted': False})
+    return
+
+  def handle_requestVoteReply(self, rvr):
+    if self.state == "candidate": #case candidate
+      if success:
+        add to accepted
+      else: #failure
+        add to refused
+      if have qorum:
+        call function for beginning leadership
+    #otherwise ignore
     return
 
   def handle_appendEntries(self, ae):
