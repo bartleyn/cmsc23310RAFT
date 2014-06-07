@@ -2,6 +2,7 @@ import json
 import sys
 import signal
 import zmq
+import random
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
@@ -41,7 +42,7 @@ class Node:
     #RAFT sepecific terms
     self.state = "follower"
     self.last_update = self.loop.time()
-    self.curr_term = 0
+    self.term = 0
     self.voted_for = None
     self.commit_index = 0 #*** initial value?
     self.last_applied = 0 #*** initial value?
@@ -63,7 +64,6 @@ class Node:
     self.last_log_term = 0
     self.qorum = (len(peer_names) + 1)/2 + 1
 
-
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
       signal.signal(sig, self.shutdown)
 
@@ -73,6 +73,8 @@ class Node:
     the message queue whenever possible.
     '''
     self.loop.start()
+
+
   
   def handle_broker_message(self, msg_frames):
     '''
@@ -102,6 +104,7 @@ class Node:
     if not self.connected:
       self.connected = True
       self.req.send_json({'type': 'helloResponse', 'source': self.name})
+      self.housekeeping()
       # if we're a spammer, start spamming!
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
@@ -121,7 +124,7 @@ class Node:
         self.logQueue[s.key] = s.value #add request to queue
         self.appendVotes[s.key] = () #make room to record replies
         self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
-        self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.curr_term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
+        self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
     elif self.checkLeader:
       # option: send message to LeaderID, but with extra field saying 'forwarded'
       # option: send message to LeaderID, but have leader treat it as if it came from client
@@ -152,26 +155,35 @@ class Node:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
 
   def handle_requestVote(self, rv):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
     if self.state == "follower":
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':[rv['source']], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False})
         return
       elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER WE CAN VOTE FOR THEM', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':[rv['source']], 'voteGranted': True})
+          'destination': rv['source'], 'voteGranted': True})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE VOTE GRANTED', 'node': self.name}})
         self.last_update = self.loop.time()
       else:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWE WE VOTED OR THEY HAVE INVALID LOG', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':[rv['source']], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False})
       return
 
     else: # self.state == "candidate" or self.state == "leader":
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE NOT FOLLOWER', 'node': self.name}})
       self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
-          'destination':[rv['source']], 'voteGranted': False})
+          'destination':rv['source'], 'voteGranted': False})
     return
 
   def handle_requestVoteReply(self, rvr):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
     if self.state == "candidate": #case candidate
       if rvr['voteGranted'] == True:
         if rv['source'] not in self.accepted:
@@ -185,7 +197,7 @@ class Node:
     return
 
   def handle_appendEntries(self, ae):
-    if msg['term'] < self.curr_term:
+    if msg['term'] < self.term:
       self.send_message('log', msg)
       self.send_message('appendEntriesReply', self.name, msg['source'], false)
       return
@@ -231,7 +243,7 @@ class Node:
   def send_message(self, type, src, dst, yes, key, value, id, msg):
   self.req.send_json({'type': type, 'success': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
   def send_message(self, type, src='', dst='', yes=True,  msg=None ):
-  self.req.send_json({'type': type, 'success': yes,  'source': src, 'dest': dst, 'term': self.curr_term})
+  self.req.send_json({'type': type, 'success': yes,  'source': src, 'dest': dst, 'term': self.term})
   return
   '''
 
@@ -244,11 +256,11 @@ class Node:
           if aer.name not in self.appendVotes[aer.key]: #dont allow repeat voting
             self.appendVotes[aer.key].append(aer.source)
             if len(self.appendVotes[aer.key]) = majority : #if majority followers have responded
-              self.log[self.curr_term][aer.key] = aer.value # comit value to log
+              self.log[self.term][aer.key] = aer.value # comit value to log
     # ^ I think this line will look more like this:
-        self.log.append({'term': self.curr_term, aer.key: aer.value})
+        self.log.append({'term': self.term, aer.key: aer.value})
         self.last_log_index += 1
-        self.last_log_term = self.curr_term
+        self.last_log_term = self.term
         # and then anything else we need to update
     #send commit messages
               #should we bother removing from logqueue and appendvotes here?
@@ -261,28 +273,39 @@ class Node:
 
   def housekeeping(self): #handles election BS
     now = self.loop.time()
-    if self.state == "follower" and now - self.last_update > term_timeout: #case of no heartbeats
-      self.call_election()
-      self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING TOP LEVEL', 'node': self.name}})
+    if self.state == "follower":
+      if now - self.last_update > term_timeout: #case of no heartbeats
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name}})
+        self.call_election()
+        self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
+      else:
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER NO TIMEOUT', 'node': self.name}})
+        self.loop.add_timeout(self.last_update + term_timeout, self.housekeeping)
     elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
         if len(self.refused) < self.qorum: #still chance of winning; poll more votes
+          #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REPOLL', 'node': self.name}})
           self.poll()
           self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
         else: #no chance of winning election
+          elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
+        elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
+      elf.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
       self.broadcast_heartbeat()
       self.loop.add_timeout(heartbeat_timeout, self.housekeeping)
     return
   
   def call_election(self):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
     self.term += 1
     self.state = "candidate"
-    self.acepted =[]
+    self.accepted = []
     self.refused = []
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.accepted.append(self)
@@ -290,11 +313,12 @@ class Node:
     return
  
   def poll(self):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'POLL', 'node': self.name}})
     for peer in self.peer_names:
       if (peer not in self.refused) and (peer not in self.accepted):
         self.req.send_json({'type': 'requestVote', 'source': self.name, 
-          'destination': peer, 'term': self.term, 'lastlogIndex': self.last_log_index, 
-          'lastlogTerm': self.last_log_term})
+          'destination': peer, 'term': self.term, 'lastLogIndex': self.last_log_index, 
+          'lastLogTerm': self.last_log_term})
     return
 
   def begin_term(self):
