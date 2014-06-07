@@ -1,13 +1,15 @@
 import json
-import time
 import sys
 import signal
 import zmq
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
-base_election_timeout = 0.5
-polling_timeout = 0.1
+term_timeout = 0.5
+min_election_timeout = 0.15
+max_election_timeout = 0.3
+polling_timeout = 0.05
+heartbeat_timeout = 0.05
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
@@ -38,7 +40,7 @@ class Node:
     
     #RAFT sepecific terms
     self.state = "follower"
-    self.last_update = time.time()
+    self.last_update = self.loop.time()
     self.curr_term = 0
     self.voted_for = None
     self.commit_index = 0 #*** initial value?
@@ -47,15 +49,14 @@ class Node:
     #re-initialize upon election: dictionary mapping node namer to index of the next log entry to send to that server
     self.match_index = None
     #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
-    
     #other things?
     self.leaderId = None # adress of curent leader
     
     #things needed for Log Replication
-    self.appendVotes = {} #dictionary maping keys to lists of nodes that have Replied to Append
+    self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append
     self.logQueue = {} #dictionary in same format as log that need to be replicated
 
-	# log code
+	  #log code
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
     self.last_log_index = 0
@@ -93,7 +94,7 @@ class Node:
     elif msg['type'] == 'spam':
       self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
     else:
-      handle_peerMsg(msg)
+      self.handle_peerMsg(msg)
     return
   
   def handle_hello(self, msg):
@@ -115,10 +116,10 @@ class Node:
 	pass
   def handle_set(self,s):
    
-    if leader:
+    if self.state = "leader":
         self.logQueue[s.key] = s.value #add request to queue
         self.appendVotes[s.key] = () #make room to record replies
-      	self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
+      	self.req.send_json({"type": "setResponse", "value": s.value}) #send setResponce
       	self.req.send_json({"type": 'appendEntries', "destination": peer_list, "term": self.curr_term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
     elif self.checkLeader:
       # option: send message to LeaderID, but with extra field saying 'forwarded'
@@ -134,7 +135,7 @@ class Node:
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']
-    if  msg_term > self.term:
+    if msg_term > self.term:
       self.term = msg_term
       self.state = "follower"
       self.voted_for = None
@@ -158,7 +159,7 @@ class Node:
       elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':[rv['source']], 'voteGranted': True})
-        self.last_update = time.time()
+        self.last_update = self.loop.time()
       else:
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':[rv['source']], 'voteGranted': False})
@@ -265,15 +266,15 @@ class Node:
     return
 
   def housekeeping(self): #handles election BS
-    now = time.time()
-    if self.state == "follower" and now - self.last_update > base_election_timeout: #case of no heartbeats
+    now = self.loop.time()
+    if self.state == "follower" and now - self.last_update > term_timeout: #case of no heartbeats
       self.call_election()
-      self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+      self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
     elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
         if len(self.refused) < self.qorum: #still chance of winning; poll more votes
           self.poll()
-          self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
+          self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
         else: #no chance of winning election
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
@@ -289,6 +290,7 @@ class Node:
     self.state = "candidate"
     self.acepted =[]
     self.refused = []
+    self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.accepted.append(self)
     self.poll()
     return
