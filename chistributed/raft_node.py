@@ -168,16 +168,16 @@ class Node:
     return
 
   def handle_requestVoteReply(self, rvr):
-    '''
     if self.state == "candidate": #case candidate
-      if success:
-        add to accepted
-      else: #failure
-        add to refused
-      if have qorum:
-        call function for beginning leadership
+      if rvr['voteGranted'] == True:
+        if rv['source'] not in self.accepted:
+          self.accepted.append(rv['source'])
+      else:
+        if rv['source'] not in self.refused:
+          self.refused.append(rv['source'])
+      if len(self.accepted) >= qorum:
+        self.begin_term()
     #otherwise ignore
-    '''
     return
 
   def handle_appendEntries(self, ae):
@@ -286,17 +286,24 @@ class Node:
     return
   
   def call_election(self):
-    '''
-    increment term
-    transition to candidate
-    vote for self
-    issue request_vote RPC to peers
-    follow-up ***
-    '''
+    self.term += 1
+    self.state = "candidate"
+    self.acepted =[]
+    self.refused = []
+    self.accepted.append(self)
+    self.poll()
+    return
+ 
+  def poll(self):
+    for name in self.peer_names:
+      if (name not in self.refused) && (name not in self.accepted):
+        self.req.send_json({'type': 'requestVote', 'source': self.name, 
+          'destination':name], 'term': self.term, 'lastlogIndex': self.last_log_index, 
+          'lastlogTerm': self.last_log_term})
     return
 
-  def poll(self):
-    #for all nodes not in accepted or rejected issue RV 
+  def begin_term(self):
+    #send append entries RPC to all others
     return
 
   def broadcast_heartbeat(self):
