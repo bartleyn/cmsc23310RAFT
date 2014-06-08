@@ -160,7 +160,7 @@ class Node:
 
 
   def handle_requestVote(self, rv):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
     if self.state == "follower":
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
@@ -188,7 +188,7 @@ class Node:
     return
 
   def handle_requestVoteReply(self, rvr):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
     if self.state == "candidate": #case candidate
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
       if rvr['voteGranted'] == True:
@@ -322,18 +322,23 @@ class Node:
     return
   
   def call_election(self):
-    #if len(peer_names) > 0:  #right now having only 1 node prevents ellection, but I'm having trouble with peer_names
-    self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
-    self.term += 1
-    self.state = "candidate"
-    self.accepted = []
-    self.refused = []
-    self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
-    self.accepted.append(self)
-    self.poll()
-    #else:
-     # self.req.send_json({'type': 'log', 'debug': {'event': 'ONLY ONE NODE, THUS LEADER', 'node': self.name}})
-     # self.begin_term()
+
+    string = 'TESTING HERE %d' % (len(self.peer_names))
+    
+    self.req.send_json({'type': 'log', 'debug': {'event': string, 'node': self.name}})
+    
+    if len(self.peer_names) > 0: #no need to poll if only one leader
+      self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
+      self.term += 1
+      self.state = "candidate"
+      self.accepted = []
+      self.refused = []
+      self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
+      self.accepted.append(self)
+      self.poll()
+    else:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'ONLY ONE NODE, THUS LEADER', 'node': self.name}})
+      self.begin_term()
     return
  
   def poll(self):
@@ -411,6 +416,8 @@ if __name__ == '__main__':
       dest='peer_names', type=str,
       default='')
   args = parser.parse_args()
-  args.peer_names = args.peer_names.split(',')
-
+  if args.peer_names:  # ''.split(',') = [''] not []
+    args.peer_names = args.peer_names.split(',')
+  else:
+    args.peer_names = []
   Node(args.node_name, args.pub_endpoint, args.router_endpoint, args.spammer, args.peer_names).start()
