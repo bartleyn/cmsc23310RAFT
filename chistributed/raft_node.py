@@ -119,20 +119,25 @@ class Node:
     return
 
   def handle_set(self,s):
-   
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST OUTSIDE', 'node': self.name, 'state': self.state}})  
     if self.state == "leader":
         self.logQueue[s.key] = s.value #add request to queue
         self.appendVotes[s.key] = () #make room to record replies
         self.req.send_json({"type": "setResponse", "value": s.value}) #send setResponse
+    	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
+	
         self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": self.last_log_term, "entries": [{'key': s.key, 'value': s.value, 'term': self.term}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
-    elif self.checkLeader:
+    elif self.LeaderID:
+    	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
       # option: send message to LeaderID, but with extra field saying 'forwarded'
       # option: send message to LeaderID, but have leader treat it as if it came from client
       # I'm going with no extra field, but since set messages are only sent by the broker, I am calling it a forwardedSet message
         self.req.send_json({"type": "forwardedSet", "destination": leaderId, "key": s.key, "value": s.value})
-        self.req.send_json({"type": "setResponce", "value": s.value}) #if the leader crashes this might cause problems
+        self.req.send_json({"type": "setResponse", "value": s.value}) #if the leader crashes this might cause problems
     else:
-        self.req.send_json({"type": "setResponce", "error": "No Leader currently exists, please wait and try again"})
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
+        self.req.send_json({"type": "setResponse", "error": "No Leader currently exists, please wait and try again"})
+
     
     return
 
@@ -210,6 +215,7 @@ class Node:
     self.state = "follower"
     self.last_update = self.loop.time()
     msg = ae
+    # Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
     if msg['entries']:
     	if (msg['leaderCommit'] != self.commit_index):
        		self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
@@ -269,10 +275,11 @@ class Node:
             if len(self.appendVotes[aer.key]) == majority : #if majority followers have responded
               #self.log[self.term][aer.key] = aer.value # comit value to log
     # ^ I think this line will look more like this:
-              self.log.append({'term': self.term, aer.key: aer.value})
+              self.log.append({'term': self.term,'key': aer.key, 'value': aer.value})
               self.last_log_index += 1
               self.last_log_term = self.term
-        # and then anything else we need to update
+        # and then anything else we need to updat
+	      self.red.send_json({'type': 'appendEntries', 'source': self.name, 'destination': self.peer_names, 'entries': self.log[-1], 'term': self.term})
     #send commit messages
               #should we bother removing from logqueue and appendvotes here?
       else: #not sucess
