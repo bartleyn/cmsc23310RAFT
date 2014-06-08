@@ -72,8 +72,6 @@ class Node:
     the message queue whenever possible.
     '''
     self.loop.start()
-
-
   
   def handle_broker_message(self, msg_frames):
     '''
@@ -108,38 +106,45 @@ class Node:
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
 
-
   def handle_get(self, msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE GET', 'node': self.name}})
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
+    self.req.send_json({'type': 'getResponce', 'id': msg.id, 'value': 0})
     return
-
-  def handle_set(self,s):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST OUTSIDE', 'node': self.name, 'state': self.state}})  
-    if self.state == "leader":
-        self.logQueue[s.key] = s.value #add request to queue
-        self.appendVotes[s.key] = [] #make room to record replies
-        self.appendVotes[s.key].append(self.name) #add leader's vote
-        self.req.send_json({"type": "setResponse", "value": s.value}) #send setResponse
-    	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
-	
-        self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": self.last_log_term, "entries": [{'key': s.key, 'value': s.value, 'term': self.term}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
-    elif self.LeaderID:
-    	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
-      # option: send message to LeaderID, but with extra field saying 'forwarded'
-      # option: send message to LeaderID, but have leader treat it as if it came from client
-      # I'm going with no extra field, but since set messages are only sent by the broker, I am calling it a forwardedSet message
-        self.req.send_json({"type": "forwardedSet", "destination": leaderId, "key": s.key, "value": s.value})
-        self.req.send_json({"type": "setResponse", "value": s.value}) #if the leader crashes this might cause problems
+  
+  def handle_set(self,msg):
+    if msg['type'] == 'forwardedSet':
+      forwarded = 1
     else:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
-        self.req.send_json({"type": "setResponse", "error": "No Leader currently exists, please wait and try again"})
+      forwarded = 0
+    if self.state == "leader":
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
+      self.logQueue[msg.key] = msg.value #add request to queue
+      self.appendVotes[msg.key] = [] #make room to record replies
+      self.appendVotes[msg.key].append(self.name) #add leader's vote
+      if not forwarded:
+        self.req.send_json({'type': "setResponse", 'id': msg.id, 'value': msg.value}) #send setResponse
+      self.req.send_json({'type': 'appendEntries', 'destination': self.peer_names,
+                          'term': self.term, 'leaderId': self.name, 'prevLogIndex': self.last_log_index,
+                          'prevLogTerm': self.last_log_term, 'entries':
+                            [{'key': msg.key, 'value': msg.value,
+                              'term': self.term}], 'leaderCommit': self.commit_index}) #send appendEntries messages to all folowers
+    elif self.leaderId:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
+      self.req.send_json({'type': 'forwardedSet', 'destination': leaderId, 'key': msg.key, 'value': msg.value})
+      if not forwarded: #just incase leader changes require more than one forwarding
+        self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
+    else:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
+      #I'm thinking it might be better to block here until a leader has been elected.
+      if not forwarded:
+        #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'error': 'No Leader currently exists, please wait and try again'})
+        self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value})
     return
-
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']
@@ -155,9 +160,10 @@ class Node:
       self.handle_requestVoteReply(msg)
     elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
+    elif msg['type'] == 'forwardedSet':
+      self.handle_set(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
-
 
   def handle_requestVote(self, rv):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
@@ -248,8 +254,6 @@ class Node:
 			'key': self.log[self.last_log_index]['key'] }) 
     	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name}})
     return
-
-
   
   def send_message(self, type, msg):
   	if type == 'log':
@@ -287,7 +291,6 @@ class Node:
 	#force follower to copy log
     else:
       print "Warning, " + self.name + "recieved appendEntriesReply while not leader"
-    
     return
 
   def housekeeping(self): #handles election BS
@@ -322,11 +325,6 @@ class Node:
     return
   
   def call_election(self):
-
-    string = 'TESTING HERE %d' % (len(self.peer_names))
-    
-    self.req.send_json({'type': 'log', 'debug': {'event': string, 'node': self.name}})
-    
     if len(self.peer_names) > 0: #no need to poll if only one leader
       self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
       self.term += 1
