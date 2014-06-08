@@ -50,7 +50,6 @@ class Node:
     #re-initialize upon election: dictionary mapping node names to index of the next log entry to send to that server
     self.match_index = None
     #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
-    #other things?
     self.leaderId = None # adress of curent leader
     
     #things needed for Log Replication
@@ -111,6 +110,7 @@ class Node:
 
 
   def handle_get(self, msg):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name}})
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
@@ -122,7 +122,8 @@ class Node:
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST OUTSIDE', 'node': self.name, 'state': self.state}})  
     if self.state == "leader":
         self.logQueue[s.key] = s.value #add request to queue
-        self.appendVotes[s.key] = () #make room to record replies
+        self.appendVotes[s.key] = [] #make room to record replies
+        self.appendVotes[s.key].append(self.name) #add leader's vote
         self.req.send_json({"type": "setResponse", "value": s.value}) #send setResponse
     	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
 	
@@ -137,8 +138,6 @@ class Node:
     else:
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
         self.req.send_json({"type": "setResponse", "error": "No Leader currently exists, please wait and try again"})
-
-    
     return
 
 
@@ -205,7 +204,7 @@ class Node:
     return
 
   def handle_appendEntries(self, ae):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
     if ae['term'] < self.term:
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM LESS THAN OURS', 'node': self.name}})
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
@@ -268,11 +267,12 @@ class Node:
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES REPLY ', 'node': self.name}})
     if leader:
       if aer.success:
-        if self.appendVotes.has_key(aer.key): 
+        if self.appendVotes.has_key(aer.key): #make sure we are voting on this key
        # V is this supposed to be the source name or dest name? I'm assuming source
+       # Yes, this is the leader recording which followers have responded, which is the source of the Reply message.
           if aer.source not in self.appendVotes[aer.key]: #dont allow repeat voting
             self.appendVotes[aer.key].append(aer.source)
-            if len(self.appendVotes[aer.key]) == majority : #if majority followers have responded
+            if len(self.appendVotes[aer.key]) == qorum: #if qorum of followers have responded
               #self.log[self.term][aer.key] = aer.value # comit value to log
     # ^ I think this line will look more like this:
               self.log.append({'term': self.term,'key': aer.key, 'value': aer.value})
@@ -322,6 +322,7 @@ class Node:
     return
   
   def call_election(self):
+    #if len(peer_names) > 0:  #right now having only 1 node prevents ellection, but I'm having trouble with peer_names
     self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
     self.term += 1
     self.state = "candidate"
@@ -330,6 +331,9 @@ class Node:
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.accepted.append(self)
     self.poll()
+    #else:
+     # self.req.send_json({'type': 'log', 'debug': {'event': 'ONLY ONE NODE, THUS LEADER', 'node': self.name}})
+     # self.begin_term()
     return
  
   def poll(self):
@@ -337,8 +341,8 @@ class Node:
     for peer in self.peer_names:
       if (peer not in self.refused) and (peer not in self.accepted):
         self.req.send_json({'type': 'requestVote', 'source': self.name, 
-          'destination': peer, 'term': self.term, 'lastLogIndex': self.last_log_index, 
-          'lastLogTerm': self.last_log_term})
+                            'destination': peer, 'term': self.term, 'lastLogIndex': self.last_log_index, 
+                            'lastLogTerm': self.last_log_term})
     return
 
   def begin_term(self):
