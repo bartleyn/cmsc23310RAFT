@@ -47,7 +47,7 @@ class Node:
     self.commit_index = 0 #*** initial value?
     self.last_applied = 0 #*** initial value?
     self.next_index = None
-    #re-initialize upon election: dictionary mapping node namer to index of the next log entry to send to that server
+    #re-initialize upon election: dictionary mapping node names to index of the next log entry to send to that server
     self.match_index = None
     #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     #other things?
@@ -123,8 +123,8 @@ class Node:
     if self.state == "leader":
         self.logQueue[s.key] = s.value #add request to queue
         self.appendVotes[s.key] = () #make room to record replies
-        self.req.send_json({"type": "setResponce", "value": s.value}) #send setResponce
-        self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": last_log_term, "entries": [{s.key: s.value}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
+        self.req.send_json({"type": "setResponse", "value": s.value}) #send setResponse
+        self.req.send_json({"type": 'appendEntries', "destination": peer_names, "term": self.term, "leaderId": self.name, "prevLogIndex": self.last_log_index, "prevLogTerm": self.last_log_term, "entries": [{'key': s.key, 'value': s.value, 'term': self.term}], "leaderCommit": self.commit_index}) #send appendEntries messages to all folowers
     elif self.checkLeader:
       # option: send message to LeaderID, but with extra field saying 'forwarded'
       # option: send message to LeaderID, but have leader treat it as if it came from client
@@ -200,51 +200,57 @@ class Node:
     return
 
   def handle_appendEntries(self, ae):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
     if ae['term'] < self.term:
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM LESS THAN OURS', 'node': self.name}})
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
           'destination': ae['source'], 'success': False, 'term' : self.term})
       return
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM VALID', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM VALID', 'node': self.name}})
     self.state = "follower"
     self.last_update = self.loop.time()
-    '''
-    if (msg['leaderCommit'] != self.commit_index)
-       self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-    if ( len(self.log) < msg['prevLogIndex'] )
-      self.send_message('log', msg)
-      self.send_message('appendEntriesReply', self.name, msg['source'], false)
-      break
-    if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] )
-       self.log = log[:msg['prevLogIndex']]
-       self.last_log_index = msg['prevLogIndex']
-       self.last_log_term = msg['prevLogTerm']
-       self.send_message('log', msg)
-       self.send_message('appendEntriesReply', self.name, msg['source'], false)
-       break
-     else
-      if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] )
-         self.log = self.log[:self.commit_index]
-         for entry in msg['entries']:
-           self.log.append(e)
-           self.commit_index += 1
-         self.last_log_index = len(log) - 1
-         self.last_log_term = log[-1]['term']
-         self.commit_index = len(log) -1 
-        self.send_message('appendEntriesReply', self.name, msg['source'], True, msg)
-        self.send_message('log', msg) 
-    self.send_message('appendEntriesReply', self.name, msg['source'], True)
-    self.send_message('log', msg)
+    msg = ae
+    if msg['entries']:
+    	if (msg['leaderCommit'] != self.commit_index):
+       		self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
+    	if ( len(self.log) < msg['prevLogIndex'] ):
+      		self.send_message('log', msg)
+      		self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LOG LENGTH SMALLER THAN MSG', 'node': self.name}})
+      		self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'success': False, 'term': self.term, 'prevLogIndex': self.last_log_index})
+      		return
+    	if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] ):
+       		self.log = log[:msg['prevLogIndex']]
+       		self.last_log_index = msg['prevLogIndex']
+       		self.last_log_term = msg['prevLogTerm']
+       		self.send_message('log', msg)
+       		self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES MISMATCH TERMS', 'node': self.name}})
+       		self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'success': False, 'term': self.term, 'prevLogIndex': self.last_log_index})
+       		return
+   	else:
+      		if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] ):
+         		self.log = self.log[:self.commit_index]
+         		for entry in msg['entries']:
+           			self.log.append(entry)
+           			self.commit_index += 1
+         		self.last_log_index = len(log) - 1
+         		self.last_log_term = log[-1]['term']
+         		self.commit_index = len(log) -1 
+    	 		self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LEADER COMMITTED BUT MISMATCH TERMS ', 'node': self.name}})
+	 		self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 
+					'key': self.log[self.last_log_index]['key'] }) 
+    
+    	self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 
+			'key': self.log[self.last_log_index]['key'] }) 
+    	self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name}})
     return
-    '''
-    return
-  '''
-  def send_message(self, type, msg):
-  if type == 'log':
-    self.req.send_json({'type': type, 'msg': msg})
-  return
 
+
+  
+  def send_message(self, type, msg):
+  	if type == 'log':
+    		self.req.send_json({'type': type, 'msg': msg})
+  	return
+  '''
   def send_message(self, type, src, dst, yes, key, value, id, msg):
   self.req.send_json({'type': type, 'success': yes, 'source': src, 'dest': dst, 'key': key, 'value': value, 'id': id})
   def send_message(self, type, src='', dst='', yes=True,  msg=None ):
@@ -253,27 +259,28 @@ class Node:
   '''
 
   def handle_appendEntriesReply(self, aer):
-    '''
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES REPLY ', 'node': self.name}})
     if leader:
       if aer.success:
         if self.appendVotes.has_key(aer.key): 
        # V is this supposed to be the source name or dest name? I'm assuming source
-          if aer.name not in self.appendVotes[aer.key]: #dont allow repeat voting
+          if aer.source not in self.appendVotes[aer.key]: #dont allow repeat voting
             self.appendVotes[aer.key].append(aer.source)
-            if len(self.appendVotes[aer.key]) = majority : #if majority followers have responded
-              self.log[self.term][aer.key] = aer.value # comit value to log
+            if len(self.appendVotes[aer.key]) == majority : #if majority followers have responded
+              #self.log[self.term][aer.key] = aer.value # comit value to log
     # ^ I think this line will look more like this:
-        self.log.append({'term': self.term, aer.key: aer.value})
-        self.last_log_index += 1
-        self.last_log_term = self.term
+              self.log.append({'term': self.term, aer.key: aer.value})
+              self.last_log_index += 1
+              self.last_log_term = self.term
         # and then anything else we need to update
     #send commit messages
               #should we bother removing from logqueue and appendvotes here?
       else: #not sucess
-        #force follower to copy log
+        print 'hi'  
+	#force follower to copy log
     else:
       print "Warning, " + self.name + "recieved appendEntriesReply while not leader"
-    '''   
+    
     return
 
   def housekeeping(self): #handles election BS
@@ -345,7 +352,7 @@ class Node:
 
   def apply_commits(self):
     '''
-    if self.commit_index > self.last_applied:
+    while self.commit_index > self.last_applied:
       self.last_applied += 1
       entry = self.log[self.last_applied]
       key = entry['key']
