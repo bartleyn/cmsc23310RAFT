@@ -3,6 +3,7 @@ import sys
 import signal
 import zmq
 import random
+import time
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
@@ -51,6 +52,7 @@ class Node:
     self.match_index = None
     #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     self.leaderId = None # adress of curent leader
+    self.election_timeout = max_election_timeout
     
     #things needed for Log Replication
     self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append
@@ -89,7 +91,7 @@ class Node:
     elif msg['type'] == 'get':
       self.handle_get(msg)
     elif msg['type'] == 'set':
-      self.handle_set(msg)      
+      self.handle_set(msg)
     elif msg['type'] == 'spam':
       self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
     else:
@@ -117,6 +119,7 @@ class Node:
     return
   
   def handle_set(self,msg):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'IN SET', 'node': self.name, 'state': self.state}})
     if msg['type'] == 'forwardedSet':
       forwarded = 1
     else:
@@ -140,10 +143,12 @@ class Node:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
       #self.req.send_json({'type': 'forwardedSet', 'destination': leaderId, 'key': msg.key, 'value': msg.value})
       #if not forwarded: #just incase leader changes require more than one forwarding
-        #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
+        #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems  def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
-      self.loop.add_callback(self.handle_set_helper)
+      #call = self.loop.DelayedCallback(self.handle_set(msg),3000)
+      #call.start()
+      self.loop.add_callback(self.handle_set_helper(msg))
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER 2', 'node': self.name, 'state': self.state}})
       #I'm thinking it might be better to block here until a leader has been elected.
     return
@@ -153,7 +158,9 @@ class Node:
     if self.leaderId != None:
       self.handle_set(msg)
     else:
+      self.loop.add_callback(self.housekeeping)
       self.loop.add_timeout(self.loop.time() + 3, self.handle_set_helper(msg))
+    return
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']

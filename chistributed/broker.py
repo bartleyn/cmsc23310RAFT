@@ -499,7 +499,9 @@ class Broker:
     if not hasattr(self, "devnull"):
       self.devnull = open(os.devnull, "w")
 
-    proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
+    f = open('out.txt', 'w')
+    proc = subprocess.Popen(args, shell=True, stdout=f, stderr=f)
+    
     self.node_pids[command['name']] = proc
 
     self.script_conditions.add('helloResponse')
