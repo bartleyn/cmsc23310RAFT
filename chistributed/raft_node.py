@@ -113,7 +113,7 @@ class Node:
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-    self.req.send_json({'type': 'getResponce', 'id': msg.id, 'value': 0})
+    self.req.send_json({'type': 'getResponse', 'id': msg.id, 'value': 0})
     return
   
   def handle_set(self,msg):
@@ -140,10 +140,11 @@ class Node:
       if not forwarded: #just incase leader changes require more than one forwarding
         self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
     else:
+      now = self.loop.time()
 
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
       self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
-      self.loop.add_callback(self.handle_set(msg))
+      self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.handle_set(msg))
       #I'm thinking it might be better to block here until a leader has been elected.
       if not forwarded:
         #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'error': 'No Leader currently exists, please wait and try again'})
@@ -223,6 +224,7 @@ class Node:
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM VALID', 'node': self.name}})
     self.state = "follower"
     self.last_update = self.loop.time()
+    #self.leaderId = ae['leaderId']
     msg = ae
     # Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
     if msg['entries']:
@@ -287,7 +289,7 @@ class Node:
               self.last_log_index += 1
               self.last_log_term = self.term
         # and then anything else we need to updat
-	      self.red.send_json({'type': 'appendEntries', 'source': self.name, 'destination': self.peer_names, 'entries': self.log[-1], 'term': self.term})
+	      self.red.send_json({'type': 'appendEntries', 'source': self.name, 'destination': self.peer_names, 'entries': self.log[-1], 'leaderId': self.leaderId, 'term': self.term})
     #send commit messages
               #should we bother removing from logqueue and appendvotes here?
       else: #not sucess
@@ -357,6 +359,7 @@ class Node:
     self.state = "leader"
     self.next_index = {}
     self.match_index = {}
+    self.leaderId = self.name
     #send append entries RPC to all others
     return
 
