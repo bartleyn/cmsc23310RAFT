@@ -122,34 +122,38 @@ class Node:
     else:
       forwarded = 0
     if self.state == "leader":
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
-      self.logQueue[msg.key] = msg.value #add request to queue
-      self.appendVotes[msg.key] = [] #make room to record replies
-      self.appendVotes[msg.key].append(self.name) #add leader's vote
-      if not forwarded:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'SEND SET RESPONSE', 'node': self.name}})
-        self.req.send_json({'type': "setResponse", 'id': msg.id, 'value': msg.value}) #send setResponse
-      self.req.send_json({'type': 'appendEntries', 'destination': self.peer_names,
-                          'term': self.term, 'leaderId': self.name, 'prevLogIndex': self.last_log_index,
-                          'prevLogTerm': self.last_log_term, 'entries':
-                            [{'key': msg.key, 'value': msg.value,
-                              'term': self.term}], 'leaderCommit': self.commit_index}) #send appendEntries messages to all folowers
+      #self.logQueue[msg.key] = msg.value #add request to queue
+      #self.appendVotes[msg.key] = [] #make room to record replies
+      #self.appendVotes[msg.key].append(self.name) #add leader's vote
+      #if not forwarded:
+        #self.req.send_json({'type': 'log', 'debug': {'event': 'SEND SET RESPONSE', 'node': self.name}})
+        #self.req.send_json({'type': "setResponse", 'id': msg.id, 'value': msg.value}) #send setResponse
+      #self.req.send_json({'type': 'appendEntries', 'destination': self.peer_names,
+                          #'term': self.term, 'leaderId': self.name, 'prevLogIndex': self.last_log_index,
+                          #'prevLogTerm': self.last_log_term, 'entries':
+                          #  [{'key': msg.key, 'value': msg.value,
+                          #    'term': self.term}], 'leaderCommit': self.commit_index}) #send appendEntries messages to all folowers
     elif self.leaderId:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
-      self.req.send_json({'type': 'forwardedSet', 'destination': leaderId, 'key': msg.key, 'value': msg.value})
-      if not forwarded: #just incase leader changes require more than one forwarding
-        self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
+      #self.req.send_json({'type': 'forwardedSet', 'destination': leaderId, 'key': msg.key, 'value': msg.value})
+      #if not forwarded: #just incase leader changes require more than one forwarding
+        #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
     else:
-      now = self.loop.time()
-
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
-      self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
-      self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.handle_set(msg))
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
+      self.loop.add_callback(self.handle_set_helper)
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER 2', 'node': self.name, 'state': self.state}})
       #I'm thinking it might be better to block here until a leader has been elected.
-      if not forwarded:
-        #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'error': 'No Leader currently exists, please wait and try again'})
-        self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value})
     return
+
+  def handle_set_helper(self, msg):
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLING HELPER', 'node': self.name, 'state': self.state}})
+    if self.leaderId != None:
+      self.handle_set(msg)
+    else:
+      self.loop.add_timeout(self.loop.time() + 3, self.handle_set_helper(msg))
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']
