@@ -127,6 +127,7 @@ class Node:
       self.appendVotes[msg.key] = [] #make room to record replies
       self.appendVotes[msg.key].append(self.name) #add leader's vote
       if not forwarded:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'SEND SET RESPONSE', 'node': self.name}})
         self.req.send_json({'type': "setResponse", 'id': msg.id, 'value': msg.value}) #send setResponse
       self.req.send_json({'type': 'appendEntries', 'destination': self.peer_names,
                           'term': self.term, 'leaderId': self.name, 'prevLogIndex': self.last_log_index,
@@ -139,7 +140,10 @@ class Node:
       if not forwarded: #just incase leader changes require more than one forwarding
         self.req.send_json({'type': 'setResponse', 'id': msg.id, 'value': msg.value}) #if the leader crashes this might cause problems
     else:
+
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name}})
+      self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
+      self.loop.add_callback(self.handle_set(msg))
       #I'm thinking it might be better to block here until a leader has been elected.
       if not forwarded:
         #self.req.send_json({'type': 'setResponse', 'id': msg.id, 'error': 'No Leader currently exists, please wait and try again'})
