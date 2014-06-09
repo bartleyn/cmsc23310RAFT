@@ -290,7 +290,7 @@ class Node:
               #self.log[self.term][aer['key']] = aer['value'] # comit value to log
     # ^ I think this line will look more like this:
               self.log.append({'term': self.term,'key': aer['key'], 'value': aer['value']})
-              self.last_log_index += 1
+              self.last_log_index = len(self.log) - 1
               self.last_log_term = self.term
 	      for peer in self.next_index.keys():
 			next_index = self.next_index[peer]
