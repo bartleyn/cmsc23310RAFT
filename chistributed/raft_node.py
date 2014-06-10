@@ -38,7 +38,7 @@ class Node:
     self.spammer = spammer
     self.peer_names = peer_names
 
-    self.store = {'foo': 'bar'} #*** change appropriately
+    self.store = {}
     
     #RAFT sepecific terms
     self.state = "follower"
@@ -52,17 +52,18 @@ class Node:
     self.match_index = None
     #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     self.leaderId = None # adress of curent leader
-    self.election_timeout = max_election_timeout
+    self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.pending_sets = []
     
+    '''
     #things needed for Log Replication
-    self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append
-    self.logQueue = {} #dictionary in same format as log that need to be replicated
-
+    #self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append; taken care of by match_index
+    #self.logQueue = {} #dictionary in same format as log that need to be replicated
+    '''
     #log code
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
-    self.last_log_index = 0
+    self.last_log_index = -1 #initialized to -1 because first index in log is 0
     self.last_log_term = 0
     self.qorum = (len(peer_names) + 1)/2 + 1
 
