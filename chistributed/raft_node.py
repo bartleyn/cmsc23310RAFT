@@ -399,8 +399,8 @@ class Node:
     self.next_index = {}
     self.match_index = {}
     for peer in self.peer_names:
-      self.next_index['peer'] = len(self.log)
-      self.match_index['peer'] = 0
+      self.next_index[peer] = len(self.log)
+      self.match_index[peer] = 0
     self.leaderId = self.name
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
@@ -411,15 +411,17 @@ class Node:
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
     for peer in self.peer_names:
       peerNextIndex = self.next_index[peer]
-      myNextIndex = len(self.log) - 1
+      myNextIndex = len(self.log)
       if peerNextIndex == myNextIndex:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCASTING HEARTBEAT', 'node': self.name}})
         self.req.send_json({'type': 'appendEntries', 'source': self.name, 
-          'destination': self.peer_names, 'term': self.term, 'prevLogIndex': 0, 
+          'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
           'prevLogTerm': 0, 'entries': None, 'leaderCommit': self.commit_index}) #*** this needs to be changed to reflect actual AE RPCs
       else:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCASTING AE RPC', 'node': self.name}})
         self.req.send_json({'type': 'appendEntries', 'source': self.name, 
-          'destination': self.peer_names, 'term': self.term, 'prevLogIndex': 0, 
-          'prevLogTerm': 0, 'entries': log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
+          'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
+          'prevLogTerm': 0, 'entries': self.log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
     return
 
   def apply_commits(self):
