@@ -12,6 +12,7 @@ min_election_timeout = 0.15
 max_election_timeout = 0.3
 polling_timeout = 0.05
 heartbeat_timeout = 0.05
+commit_timeout = 0.05
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
@@ -45,12 +46,10 @@ class Node:
     self.last_update = self.loop.time()
     self.term = 0
     self.voted_for = None
-    self.commit_index = 0 #*** initial value?
-    self.last_applied = 0 #*** initial value?
-    self.next_index = None
-    #re-initialize upon election: dictionary mapping node names to index of the next log entry to send to that server
-    self.match_index = None
-    #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
+    self.commit_index = -1 #initialized to -1 because first index in log is 0
+    self.last_applied = -1 #initialized to -1 because first index in log is 0
+    self.next_index = None #re-initialize upon election: dictionary mapping node names to index of the next log entry to send to that server
+    self.match_index = None #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     self.leaderId = None # adress of curent leader
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.pending_sets = []
@@ -106,6 +105,7 @@ class Node:
       self.connected = True
       self.req.send_json({'type': 'helloResponse', 'source': self.name})
       self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
+      self.loop.add_callback(self.apply_commits)
       # if we're a spammer, start spamming!
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
@@ -366,7 +366,7 @@ class Node:
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
-      self.update_commitIndex()
+      self.leader_update_commitIndex()
       self.broadcast_heartbeat()
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER FINISHED BROADCAST', 'node': self.name}})
       self.loop.add_timeout(now + heartbeat_timeout, self.housekeeping)
@@ -404,14 +404,14 @@ class Node:
     for peer in self.peer_names:
       self.next_index[peer] = len(self.log)
       self.match_index[peer] = -1
-    self.match_index[self.name] = -1
+    self.match_index[self.name] = len(self.log) - 1
     self.leaderId = self.name
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
     #send append entries RPC to all others
     return
 
-  def update_commitIndex(self):
+  def leader_update_commitIndex(self):
     match = self.match_index.values()
     match.sort()
     median = len(match)/2
@@ -435,17 +435,16 @@ class Node:
           'prevLogTerm': 0, 'entries': self.log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
     return
 
-  def apply_commits(self):
-    '''
+  def apply_commits(self): #commit each log entry until the next commit index
     while self.commit_index > self.last_applied:
       self.last_applied += 1
       entry = self.log[self.last_applied]
       key = entry['key']
       value = entry['value']
-      self.store[key] = value   
-
-    commit each log entry until the next commit index
-    '''
+      self.store[key] = value
+      if self.state == 'leader':
+        self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
+    self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
   def send_spam(self):
