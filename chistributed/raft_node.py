@@ -258,8 +258,6 @@ class Node:
     self.leaderId = msg['source']
     for key in self.pending_sets.keys():
        self.handle_set(self.pending_sets.pop(key))
-    #while len(self.pending_sets.keys()) > 0:
-    #  self.handle_set(self.pending_sets.popitem())
     while len(self.pending_gets) > 0:
        self.handle_get(self.pending_gets.pop(0))
     #Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
@@ -320,7 +318,6 @@ class Node:
           self.last_log_index = len(log) - 1
           self.last_log_term = log[-1]['term']
           self.commit_index = len(log) -1
-    self.apply_commits() 
           self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LEADER COMMITTED BUT MISMATCH TERMS ', 'node': self.name}})
           self.req.send_json({'type': 'appendEntriesReply', 'success': True, 'source': self.name, 'destination': msg['source'], 
             'key': self.log[self.last_log_index]['key'], 'term': self.term }) 
@@ -329,7 +326,6 @@ class Node:
       self.last_log_index = len(self.log) - 1
       self.last_log_term = self.log[-1]['term']
       self.commit_index = len(self.log) - 1
-      self.apply_commits()
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'prevLogIndex': self.last_log_index, 'prevLogTerm': self.last_log_term, 
         'key': self.log[self.last_log_index]['key'], 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name, 'key': self.log[self.last_log_index]['key'], 'value': self.log[self.last_log_index]['value']}})
@@ -452,11 +448,16 @@ class Node:
     return
 
   def leader_update_commitIndex(self):
+    old_commit_index = self.commit_index
     match = self.match_index.values()
     match.sort()
     median = len(match)/2
     if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
       self.commit_index = match[2]
+    for i in xrange(old_commit_index, self.commit_index):
+		if i in pending_sets2.keys():
+			msg = self.pending_sets2.pop(i)
+      			self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
 
   def broadcast_heartbeat(self):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
