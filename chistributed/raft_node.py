@@ -126,7 +126,6 @@ class Node:
     else:
       forwarded = 0
     if self.state == "leader":
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
       self.logQueue[msg['key']] = msg['value'] #add request to queue
       self.appendVotes[msg['key']] = [] #make room to record replies
@@ -220,18 +219,48 @@ class Node:
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
           'destination': msg['source'], 'success': False, 'term' : self.term})
       return
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM VALID', 'node': self.name, 'term': self.term}})
     self.state = "follower"
     self.last_update = self.loop.time()
     self.leaderId = msg['source']
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
-    # Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
+    #Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
+    #brilliant
     if msg['entries']:
-      if (msg['leaderCommit'] != self.commit_index):
-        self.commit_index = min( msg['leaderCommit'], len (self.log) - 1)
-      if ( len(self.log) < msg['prevLogIndex'] ):
-        self.send_message('log', msg)
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES NOT HEARTBEAT', 'node': self.name, 'term': self.term}})
+      
+      prevLogIndex = msg['prevLogIndex']
+      prevLogTerm = msg['prevLogTerm']
+      if (len(self.log) < prevLogIndex): #case entry index too large; we are missing entries
+        self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
+          'destination': msg['source'], 'success': False, 'term' : self.term})
+      elif self.log[prevLogIndex]['term'] != prevLogTerm: #case previous conflicting entries
+        self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
+          'destination': msg['source'], 'success': False, 'term' : self.term})
+      else: # case we can append entries 
+        index = prevLogIndex + 1
+        new_entries = msg['entries']
+        for entry in new_entries: #loop both removes any matching entries from new_entries and any log entries after a non-matching entry from the log
+          if len(self.log) < index:
+            break
+          elif self.log[index]['term'] != entry['term']:
+            while len(self.log) >= index:
+              self.log.pop()
+            break
+          else:
+            new_entries.pop(0)
+            index += 1
+        for entry in new_entries:
+          self.log.append({'key': entry['key'], 'value': entry['value'], 'term': entry['term']})
+        last_log_index = len(self.log) - 1 
+        last_log_term = self.log[last_log_index]['term']
+        if (msg['leaderCommit'] > self.commit_index):
+          self.commit_index = min( msg['leaderCommit'], len (self.log))
+        self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'logLastIndex': last_log_index, 'logLastTerm': last_log_term, 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
+
+
+      '''
+      if (len(self.log) < msg['prevLogIndex'] ):
         self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LOG LENGTH SMALLER THAN MSG', 'node': self.name}})
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'success': False, 'term': self.term, 'prevLogIndex': self.last_log_index})
         return
@@ -264,16 +293,12 @@ class Node:
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'prevLogIndex': self.last_log_index, 'prevLogTerm': self.last_log_term, 
         'key': self.log[self.last_log_index]['key'], 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name, 'key': self.log[self.last_log_index]['key'], 'value': self.log[self.last_log_index]['value']}})
+    ''' 
     return
   
 
   def handle_appendEntriesReply(self, msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES REPLY ', 'node': self.name}})
-    if self.term < msg['term'] and self.state == "leader":
-      self.term = msg['term']
-      self.state = "follower" 
-      self.req.loop.add_callback(self.housekeeping)
-      return
     if self.state == "leader":
       if msg['success']:
         self.next_index[msg['source']] = msg['commitIndex'] + 1
