@@ -126,10 +126,12 @@ class Node:
       forwarded = 1
     else:
       forwarded = 0
+    
     if self.state == "leader":
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
       self.log.append({'key': msg['key'], 'value': msg['value'], 'term': self.term})
       self.next_index[self.name] = len(self.log)
+      
       '''
       self.logQueue[msg['key']] = msg['value'] #add request to queue
       self.appendVotes[msg['key']] = [] #make room to record replies
@@ -154,7 +156,9 @@ class Node:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
       self.pending_sets.append(msg)
       #I'm thinking it might be better to block here until a leader has been elected.
-
+      if self.state == "leader" and forwarded:
+		self.req.send_json({'type': 'receivedFwdSetReq', 'source': self.name, 'destination': msg['source'], 'term': self.term, 
+				'id': msg['id'], 'key': msg['key'], 'value': msg['value']})
     return
 
   def handle_peerMsg(self, msg):
@@ -445,6 +449,22 @@ class Node:
           'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
           'prevLogTerm': 0, 'entries': self.log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
     return
+
+  def manage_pending_sets(self):
+	if self.state == "follower":
+		if self.leaderId:
+			self.handle_set(self.pending_sets.pop(0))
+	elif self.state == "leader":
+		for set_request in self.pending_sets:
+			self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
+			self.last_log_index = len(log) - 1
+			self.last_log_term = self.term
+			self.pending_sets2[self.last_log_index] = set_request 
+			# add to log
+			# pending_sets2[index] = set
+			
+	return
+
 
   def apply_commits(self): #commit each log entry until the next commit index
     while self.commit_index > self.last_applied:
