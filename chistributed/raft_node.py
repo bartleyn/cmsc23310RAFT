@@ -281,6 +281,9 @@ class Node:
             break
           elif self.log[index]['term'] != entry['term']: #remove any conflicting entry and any afterward
             while len(self.log) >= index:
+              if len(self.log) in pending_sets2.keys():
+                failed_set = pending_sets2.pop(len(self.log))
+                self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'error': "log entry for set request not comitted"})
               self.log.pop()
             break
           else:
