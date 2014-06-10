@@ -1,4 +1,5 @@
-start A --peer-names B,C
-start B --peer-names A,C
-start C --peer-names A,B
+start A --peer-names B,C,D
+start B --peer-names A,C,D
+start C --peer-names A,B,D
+start D --peer-names A,B,C
 set foo 42

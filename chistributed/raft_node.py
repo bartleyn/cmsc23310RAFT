@@ -113,14 +113,12 @@ class Node:
       #  self.loop.add_callback(self.send_spam)
 
   def handle_get(self, msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE GET', 'node': self.name}})
     if msg['type'] == 'forwardedGet':
       forwarded = 1
     else:
       forwarded = 0
 
     if self.state == 'follower':
-      self.req.send_json({'type': 'log', 'debug': {'event': 'IN GET', 'node': self.name, 'state': self.state}})
       if self.leaderId:
         self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'key': msg['key'], 'term': self.term})
         self.pending_gets.append(msg)
@@ -205,7 +203,6 @@ class Node:
     self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'id': set_request['id']})
 
   def handle_requestVote(self, rv):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
     if self.state == "follower":
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
@@ -233,7 +230,6 @@ class Node:
     return
 
   def handle_requestVoteReply(self, rvr):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY', 'node': self.name}})
     if self.state == "candidate": #case candidate
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
       if rvr['voteGranted'] == True:
@@ -253,20 +249,14 @@ class Node:
     if msg['term'] < self.term:
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM LESS THAN OURS', 'node': self.name}})
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
-          'destination': msg['source'], 'success': False, 'term' : self.term})
+        'destination': msg['source'], 'success': False, 'term' : self.term})
       return
     self.state = "follower"
     self.last_update = self.loop.time()
     self.leaderId = msg['source']
-    for key in self.pending_sets.keys():
-       self.handle_set(self.pending_sets.pop(key))
     while len(self.pending_gets) > 0:
        self.handle_get(self.pending_gets.pop(0))
-    #Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
-    #brilliant
     if msg['entries']:
-      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES NOT HEARTBEAT', 'node': self.name, 'term': self.term}})
-      
       prevLogIndex = msg['prevLogIndex']
       prevLogTerm = msg['prevLogTerm']
       if len(self.log) < prevLogIndex: #case entry index too large; we are missing entries
@@ -275,11 +265,12 @@ class Node:
       elif len(self.log) > 0 and self.log[prevLogIndex]['term'] != prevLogTerm: #case previous conflicting entries
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
           'destination': msg['source'], 'success': False, 'term' : self.term})
-      else: # case we can append entries 
+        debug = {'prevLogIndex':prevLogIndex, 'prevLogTerm':prevLogTerm, 'log':self.log}
+      else: # case we can append entries
         index = prevLogIndex + 1
         new_entries = msg['entries']
         for entry in new_entries: 
-          if len(self.log) < index: #if index is greater than current length (not possible to have conflicting entries because none there)
+          if index >= len(self.log): #if index is greater than current length (not possible to have conflicting entries because none there)
             break
           elif self.log[index]['term'] != entry['term']: #remove any conflicting entry and any afterward
             while len(self.log) >= index:
@@ -339,7 +330,6 @@ class Node:
   
 
   def handle_appendEntriesReply(self, msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES REPLY ', 'node': self.name}})
     if self.state == "leader":
       if msg['success']:
         self.match_index[msg['source']] = msg['logLastIndex']
@@ -377,16 +367,14 @@ class Node:
         '''
       return
 
-  def housekeeping(self): #handles election BS
+  def housekeeping(self):
     now = self.loop.time()
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING TOP LEVEL', 'node': self.name}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER TERM TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
       else:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE FOLLOWER NO TIMEOUT', 'node': self.name}})
         self.loop.add_timeout(self.last_update + term_timeout, self.housekeeping)
     elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
@@ -420,7 +408,6 @@ class Node:
       self.accepted.append(self)
       self.poll()
     else:
-      self.req.send_json({'type': 'log', 'debug': {'event': 'ONLY ONE NODE, THUS LEADER', 'node': self.name}})
       self.begin_term()
     return
  
@@ -466,15 +453,13 @@ class Node:
       peerNextIndex = self.next_index[peer]
       myNextIndex = len(self.log)
       if peerNextIndex == myNextIndex:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCASTING HEARTBEAT', 'node': self.name}})
         self.req.send_json({'type': 'appendEntries', 'source': self.name, 
           'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
           'prevLogTerm': 0, 'entries': None, 'leaderCommit': self.commit_index}) #*** this needs to be changed to reflect actual AE RPCs
       else:
-        self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCASTING AE RPC', 'node': self.name}})
         self.req.send_json({'type': 'appendEntries', 'source': self.name, 
-          'destination': peer, 'term': self.term, 'prevLogIndex': 0, 
-          'prevLogTerm': 0, 'entries': self.log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
+          'destination': peer, 'term': self.term, 'prevLogIndex': peerNextIndex-1, 
+          'prevLogTerm': self.log[peerNextIndex-1]['term'], 'entries': self.log[peerNextIndex:myNextIndex], 'leaderCommit': self.commit_index})
     return
 
   def manage_pending_sets(self):
@@ -483,7 +468,6 @@ class Node:
         for ID in self.pending_sets.keys():
           self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'setRequest':self.pending_sets[ID], 'term':self.term, 'source':self.name})
     elif self.state == "leader":
-      self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCASTING HEARTBEAT', 'node': self.name}})
       for ID in self.pending_sets.keys():
         set_request = self.pending_sets.pop(ID)
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
