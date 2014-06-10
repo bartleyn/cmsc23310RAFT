@@ -263,6 +263,7 @@ class Node:
         last_log_term = self.log[last_log_index]['term']
         if (msg['leaderCommit'] > self.commit_index):
           self.commit_index = min( msg['leaderCommit'], len (self.log))
+	  self.apply_commits()
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'logLastIndex': last_log_index, 'logLastTerm': last_log_term, 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
 
 
@@ -288,7 +289,8 @@ class Node:
             self.commit_index += 1
           self.last_log_index = len(log) - 1
           self.last_log_term = log[-1]['term']
-          self.commit_index = len(log) -1 
+          self.commit_index = len(log) -1
+	  self.apply_commits() 
           self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LEADER COMMITTED BUT MISMATCH TERMS ', 'node': self.name}})
           self.req.send_json({'type': 'appendEntriesReply', 'success': True, 'source': self.name, 'destination': msg['source'], 
             'key': self.log[self.last_log_index]['key'], 'term': self.term }) 
@@ -297,6 +299,7 @@ class Node:
       self.last_log_index = len(self.log) - 1
       self.last_log_term = self.log[-1]['term']
       self.commit_index = len(self.log) - 1
+      self.apply_commits()
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'prevLogIndex': self.last_log_index, 'prevLogTerm': self.last_log_term, 
         'key': self.log[self.last_log_index]['key'], 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name, 'key': self.log[self.last_log_index]['key'], 'value': self.log[self.last_log_index]['value']}})
@@ -310,6 +313,14 @@ class Node:
       if msg['success']:
         self.match_index[msg['source']] = msg['logLastIndex']
         self.next_index[msg['source']] = msg['logLastIndex'] + 1
+	num_matches = 0
+	for match_index in self.match_index.values():
+		if match_index == msg['logLastIndex']:
+			num_matches += 1
+	# if we know we have replicated an entry on a majority of the nodes, then we can safely set response
+	#if num_matches >= qorum:
+        #	self.req.send_json({'type': "setResponse", 'id': msg['id'], 'value': msg['value']})
+	# We should add the message ID to each of these messages (or some means of keeping track of set request msg ids), since we aren't sending the setResponse until we commit
       else: #failure
         self.next_index[msg['source']] += -1
         '''
@@ -435,7 +446,7 @@ class Node:
     return
 
   def apply_commits(self):
-    '''
+    
     while self.commit_index > self.last_applied:
       self.last_applied += 1
       entry = self.log[self.last_applied]
@@ -443,8 +454,8 @@ class Node:
       value = entry['value']
       self.store[key] = value   
 
-    commit each log entry until the next commit index
-    '''
+    #commit each log entry until the next commit index
+    
     return
 
   def send_spam(self):
