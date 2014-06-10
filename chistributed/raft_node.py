@@ -53,7 +53,7 @@ class Node:
     self.leaderId = None # adress of curent leader
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.pending_sets = []
-    
+    self.pending_gets = []    
     '''
     #things needed for Log Replication
     #self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append; taken care of by match_index
@@ -112,12 +112,23 @@ class Node:
 
   def handle_get(self, msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE GET', 'node': self.name}})
+    if msg['type'] == 'forwardedGet':
+	forwarded = 1
+    else:
+	forwarded = 0
+
+    if self.state == 'follower':
+    	self.req.send_json({'type': 'log', 'debug': {'event': 'IN GET', 'node': self.name, 'state': self.state}})
+	if self.leaderId:
+      		self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'key': msg['key'], 'term': self.term})
+    	self.pending_gets.append(msg)
+    else:
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-    self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': 0})
+    	self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[msg['key']]})
     return
   
   def handle_set(self,msg):
@@ -236,6 +247,8 @@ class Node:
     self.leaderId = msg['source']
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
+    while len(self.pending_gets) > 0:
+      self.handle_get(self.pending_gets.pop(0))
     #Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
     #brilliant
     if msg['entries']:
@@ -423,6 +436,8 @@ class Node:
     self.leaderId = self.name
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
+    while len(self.pending_gets) > 0:
+      self.handle_get(self.pending_gets.pop(0))
     #send append entries RPC to all others
     return
 
@@ -473,8 +488,8 @@ class Node:
       key = entry['key']
       value = entry['value']
       self.store[key] = value 
-      if self.state == 'leader':
-        self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
+      #if self.state == 'leader':
+      #  self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
     self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
