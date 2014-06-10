@@ -114,22 +114,22 @@ class Node:
   def handle_get(self, msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE GET', 'node': self.name}})
     if msg['type'] == 'forwardedGet':
-	forwarded = 1
+      forwarded = 1
     else:
-	forwarded = 0
+      forwarded = 0
 
     if self.state == 'follower':
-    	self.req.send_json({'type': 'log', 'debug': {'event': 'IN GET', 'node': self.name, 'state': self.state}})
-	if self.leaderId:
-      		self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'key': msg['key'], 'term': self.term})
-    	self.pending_gets.append(msg)
+      self.req.send_json({'type': 'log', 'debug': {'event': 'IN GET', 'node': self.name, 'state': self.state}})
+      if self.leaderId:
+        self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'key': msg['key'], 'term': self.term})
+        self.pending_gets.append(msg)
     else:
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-    	self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[msg['key']]})
+      self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[msg['key']]})
     return
   
   def handle_set(self,msg):
@@ -441,10 +441,6 @@ class Node:
       self.match_index[peer] = -1
     self.match_index[self.name] = len(self.log) - 1
     self.leaderId = self.name
-    #while len(self.pending_sets.keys()) > 0:
-    #  self.handle_set(self.pending_sets.popitem())
-    for key in self.pending_sets.keys():
-	self.handle_set(self.pending_sets.pop(key))
     while len(self.pending_gets) > 0:
       self.handle_get(self.pending_gets.pop(0))
     #send append entries RPC to all others
@@ -457,10 +453,10 @@ class Node:
     median = len(match)/2
     if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
       self.commit_index = match[2]
-    for i in xrange(old_commit_index, self.commit_index):
-		if i in pending_sets2.keys():
-			msg = self.pending_sets2.pop(i)
-      			self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
+    for i in range(old_commit_index, self.commit_index):
+      if i in pending_sets2.keys():
+        msg = self.pending_sets2.pop(i)
+        self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
 
   def broadcast_heartbeat(self):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
@@ -488,10 +484,11 @@ class Node:
       for ID in self.pending_sets.keys():
         set_request = self.pending_sets.pop(ID)['setReqest']
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
-        self.next_index[self.name] = len(self.log)
-        self.last_log_index = len(log) - 1
-        self.last_log_term = self.term
         self.pending_sets2[self.last_log_index] = set_request
+      self.log.append({'key': 'phantom', 'value': 0, 'term': self.term }) #add phantom entry to log; this makes commits or overwrites deterministic assuming that a leader is chosen
+      self.next_index[self.name] = len(self.log)
+      self.last_log_index = len(log) - 1
+      self.last_log_term = self.term
     return
 
 
@@ -502,8 +499,6 @@ class Node:
       key = entry['key']
       value = entry['value']
       self.store[key] = value 
-      #if self.state == 'leader':
-      #  self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
     self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
