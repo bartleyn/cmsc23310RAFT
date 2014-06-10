@@ -52,7 +52,8 @@ class Node:
     self.match_index = None #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     self.leaderId = None # adress of curent leader
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
-    self.pending_sets = []
+    self.pending_sets = {}
+    self.pending_sets2 = {}
     self.pending_gets = []    
     '''
     #things needed for Log Replication
@@ -133,7 +134,7 @@ class Node:
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
-    self.pending_sets[msg['ID']] = msg
+    self.pending_sets[int(msg['id'])] = msg
      
     '''
     if self.state == "leader":
@@ -163,7 +164,7 @@ class Node:
 
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
-      self.pending_sets.append(msg)
+      self.pending_sets[msg['id']] = msg
       #I'm thinking it might be better to block here until a leader has been elected.
       if self.state == "leader" and forwarded:
     self.req.send_json({'type': 'receivedFwdSetReq', 'source': self.name, 'destination': msg['source'], 'term': self.term, 
@@ -194,7 +195,7 @@ class Node:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
 
   def handle_fwdSetReply(self, msg):
-    self.pending_sets.pop(msg['ID'])
+    self.pending_sets.pop(msg['id'])
     return
 
   def handle_fwdSet(self,msg):
@@ -255,10 +256,12 @@ class Node:
     self.state = "follower"
     self.last_update = self.loop.time()
     self.leaderId = msg['source']
-    while len(self.pending_sets) > 0:
-      self.handle_set(self.pending_sets.pop(0))
+    for key in self.pending_sets.keys():
+       self.handle_set(self.pending_sets.pop(key))
+    #while len(self.pending_sets.keys()) > 0:
+    #  self.handle_set(self.pending_sets.popitem())
     while len(self.pending_gets) > 0:
-      self.handle_get(self.pending_gets.pop(0))
+       self.handle_get(self.pending_gets.pop(0))
     #Only do this fancy appendEntry logic if there's an entry in the message (o/w it must be a heartbeat / leader notification )
     #brilliant
     if msg['entries']:
@@ -439,8 +442,10 @@ class Node:
       self.match_index[peer] = -1
     self.match_index[self.name] = len(self.log) - 1
     self.leaderId = self.name
-    while len(self.pending_sets) > 0:
-      self.handle_set(self.pending_sets.pop(0))
+    #while len(self.pending_sets.keys()) > 0:
+    #  self.handle_set(self.pending_sets.popitem())
+    for key in self.pending_sets.keys():
+	self.handle_set(self.pending_sets.pop(key))
     while len(self.pending_gets) > 0:
       self.handle_get(self.pending_gets.pop(0))
     #send append entries RPC to all others
