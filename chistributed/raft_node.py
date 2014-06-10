@@ -121,18 +121,16 @@ class Node:
     return
   
   def handle_set(self,msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'IN SET', 'node': self.name, 'state': self.state}})
-    if msg['type'] == 'forwardedSet':
-      forwarded = 1
-    else:
-      forwarded = 0
-    
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
+    self.pending_sets[msg['ID']] = msg
+     
+    '''
     if self.state == "leader":
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
       self.log.append({'key': msg['key'], 'value': msg['value'], 'term': self.term})
       self.next_index[self.name] = len(self.log)
       
-      '''
+      
       self.logQueue[msg['key']] = msg['value'] #add request to queue
       self.appendVotes[msg['key']] = [] #make room to record replies
       self.appendVotes[msg['key']].append(self.name) #add leader's vote
@@ -144,22 +142,24 @@ class Node:
                           'prevLogTerm': self.last_log_term, 'entries':
                             [{'key': msg['key'], 'value': msg['value'],
                               'term': self.term}], 'leaderCommit': self.commit_index}) #send appendEntries messages to all folowers
-      '''
+
     elif self.leaderId:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
       self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'key': msg['key'], 'value': msg['value'], 'term': self.term})
-      '''
+
       if not forwarded: #just incase leader changes require more than one forwarding
         self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']}) #if the leader crashes this might cause problems
-      '''
+
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
       self.pending_sets.append(msg)
       #I'm thinking it might be better to block here until a leader has been elected.
       if self.state == "leader" and forwarded:
-		self.req.send_json({'type': 'receivedFwdSetReq', 'source': self.name, 'destination': msg['source'], 'term': self.term, 
-				'id': msg['id'], 'key': msg['key'], 'value': msg['value']})
+    self.req.send_json({'type': 'receivedFwdSetReq', 'source': self.name, 'destination': msg['source'], 'term': self.term, 
+        'id': msg['id'], 'key': msg['key'], 'value': msg['value']})
+    '''
     return
+
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']
@@ -167,7 +167,11 @@ class Node:
       self.term = msg_term
       self.state = "follower"
       self.voted_for = None
-    if msg['type'] == 'requestVote':
+    if msg['type'] == 'forwardedSet':
+      self.handle_fwdSet(msg)
+    elif msg['type'] == 'forwardedSetReply':
+      self.handle_fwdSetReply(msg)
+    elif msg['type'] == 'requestVote':
       self.handle_requestVote(msg)
     elif msg['type'] == 'appendEntries':
       self.handle_appendEntries(msg)
@@ -175,10 +179,16 @@ class Node:
       self.handle_requestVoteReply(msg)
     elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
-    elif msg['type'] == 'forwardedSet':
-      self.handle_set(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+
+  def handle_fwdSetReply(self, msg):
+    self.pending_sets.pop(msg['ID'])
+    return
+
+  def handle_fwdSet(self,msg):
+    self.pending_sets[msg['ID']] = msg
+    self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'ID': msg['setRequest']['ID']})
 
   def handle_requestVote(self, rv):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE', 'node': self.name}})
@@ -268,7 +278,6 @@ class Node:
         last_log_term = self.log[last_log_index]['term']
         if (msg['leaderCommit'] > self.commit_index):
           self.commit_index = min( msg['leaderCommit'], len (self.log))
-	  self.apply_commits()
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'logLastIndex': last_log_index, 'logLastTerm': last_log_term, 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
 
 
@@ -295,7 +304,7 @@ class Node:
           self.last_log_index = len(log) - 1
           self.last_log_term = log[-1]['term']
           self.commit_index = len(log) -1
-	  self.apply_commits() 
+    self.apply_commits() 
           self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LEADER COMMITTED BUT MISMATCH TERMS ', 'node': self.name}})
           self.req.send_json({'type': 'appendEntriesReply', 'success': True, 'source': self.name, 'destination': msg['source'], 
             'key': self.log[self.last_log_index]['key'], 'term': self.term }) 
@@ -318,14 +327,10 @@ class Node:
       if msg['success']:
         self.match_index[msg['source']] = msg['logLastIndex']
         self.next_index[msg['source']] = msg['logLastIndex'] + 1
-	num_matches = 0
-	for match_index in self.match_index.values():
-		if match_index == msg['logLastIndex']:
-			num_matches += 1
-	# if we know we have replicated an entry on a majority of the nodes, then we can safely set response
-	#if num_matches >= qorum:
-        #	self.req.send_json({'type': "setResponse", 'id': msg['id'], 'value': msg['value']})
-	# We should add the message ID to each of these messages (or some means of keeping track of set request msg ids), since we aren't sending the setResponse until we commit
+  # if we know we have replicated an entry on a majority of the nodes, then we can safely set response
+  #if num_matches >= qorum:
+        # self.req.send_json({'type': "setResponse", 'id': msg['id'], 'value': msg['value']})
+  # We should add the message ID to each of these messages (or some means of keeping track of set request msg ids), since we aren't sending the setResponse until we commit
       else: #failure
         self.next_index[msg['source']] += -1
         '''
@@ -353,7 +358,7 @@ class Node:
     else:
       print "Warning, " + self.name + "recieved appendEntriesReply while not leader"
         '''
-    return
+      return
 
   def housekeeping(self): #handles election BS
     now = self.loop.time()
@@ -451,19 +456,19 @@ class Node:
     return
 
   def manage_pending_sets(self):
-	if self.state == "follower":
-		if self.leaderId:
-			self.handle_set(self.pending_sets.pop(0))
-	elif self.state == "leader":
-		for set_request in self.pending_sets:
-			self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
-			self.last_log_index = len(log) - 1
-			self.last_log_term = self.term
-			self.pending_sets2[self.last_log_index] = set_request 
-			# add to log
-			# pending_sets2[index] = set
-			
-	return
+    if self.state == "follower":
+      if self.leaderId:
+        for ID in self.pending_sets.keys():
+          self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'setRequest':self.pending_sets[ID]})
+    elif self.state == "leader":
+      for ID in self.pending_sets.keys():
+        set_request = self.pending_sets.pop(ID)['setReqest']
+        self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
+        self.next_index[self.name] = len(self.log)
+        self.last_log_index = len(log) - 1
+        self.last_log_term = self.term
+        self.pending_sets2[self.last_log_index] = set_request
+    return
 
 
   def apply_commits(self): #commit each log entry until the next commit index
