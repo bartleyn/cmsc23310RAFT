@@ -128,6 +128,7 @@ class Node:
     if self.state == "leader":
       self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
       self.log.append({'key': msg['key'], 'value': msg['value'], 'term': self.term})
+      self.next_index[self.name] = len(self.log)
       '''
       self.logQueue[msg['key']] = msg['value'] #add request to queue
       self.appendVotes[msg['key']] = [] #make room to record replies
@@ -364,6 +365,7 @@ class Node:
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
+      self.update_commitIndex()
       self.broadcast_heartbeat()
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER FINISHED BROADCAST', 'node': self.name}})
       self.loop.add_timeout(now + heartbeat_timeout, self.housekeeping)
@@ -400,12 +402,20 @@ class Node:
     self.match_index = {}
     for peer in self.peer_names:
       self.next_index[peer] = len(self.log)
-      self.match_index[peer] = 0
+      self.match_index[peer] = -1
+    self.match_index[self.name] = -1
     self.leaderId = self.name
     while len(self.pending_sets) > 0:
       self.handle_set(self.pending_sets.pop(0))
     #send append entries RPC to all others
     return
+
+  def update_commitIndex(self):
+    match = self.match_index.values()
+    match.sort()
+    median = len(match)/2
+    if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
+      self.commit_index = match[2]
 
   def broadcast_heartbeat(self):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
