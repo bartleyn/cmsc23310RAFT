@@ -112,11 +112,12 @@ class Node:
       if self.state == 'follower':
          if self.leaderId:
             for msgId in self.pending_gets.keys():
-              msg = self.pending_gets.pop(msgId)
+              msg = self.pending_gets[msgId]
               if msg['type'] == 'get':
                  self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'message': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
               else:
                  self.req.send_json(msg['getResp'])
+                 self.pending_gets.pop(msgId)
 
       elif self.state == 'leader':
         for msgId in self.pending_gets.keys():
@@ -129,9 +130,17 @@ class Node:
   def handle_get(self, msg):
     if msg['type'] == 'forwardedGet':
       self.pending_gets[int(msg['id'])] = msg['message']
+      return
 
-
+    if self.state == 'leader' and msg['type'] == 'get' and msg['destination'] == self.name:
+       if msg['key'] not in self.store:
+          self.pending_gets[int(msg['id'])] = msg
+          return
+       else:
+            self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]})
+            return
     if self.state == 'leader':
+       print 'handle_get, leader, with msg: ', msg
        if msg['key'] not in self.store:
           self.pending_gets[int(msg['id'])] = msg
           return
