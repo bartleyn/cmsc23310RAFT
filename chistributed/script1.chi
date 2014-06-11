@@ -5,10 +5,4 @@ start B --peer-names A,C,D,E
 start C --peer-names A,B,D,E
 start D --peer-names A,B,C,E
 start E --peer-names A,B,C,D
-#cut off two nodes from the group
-split minority A,B
-#demonstrate majority still functioning
-set C data1 1
-after 5 {
-      get C data1
-}
+set C foo 42
