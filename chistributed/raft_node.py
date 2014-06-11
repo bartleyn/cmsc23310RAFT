@@ -146,10 +146,7 @@ class Node:
           self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'origin_msg':msg['origin_msg'], 'key': msg['key'], 'term': self.term, 'id': msg['id']})
 
       elif msg['type'] == 'getResp': #send get responce back to broker
-        if msg['key'] in self.store:
           self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': msg['value'] })
-        else: # pend until data is known
-            self.pending_gets[int(msg['id'])] = msg
 
     else: # leader Id not known, wait for election to process
         self.pending_gets[int(msg['id'])] = msg['message']
@@ -189,6 +186,8 @@ class Node:
     elif msg['type'] == 'setResponseReply':
       self.handle_set(msg)
     elif msg['type'] == 'getResponseReply':
+      self.handle_get(msg)
+    elif msg['type'] == 'getResp':
       self.handle_get(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
