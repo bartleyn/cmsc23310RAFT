@@ -231,7 +231,7 @@ class Node:
     if msg['entries']:
       prevLogIndex = msg['prevLogIndex']
       prevLogTerm = msg['prevLogTerm']
-      if len(self.log) < prevLogIndex: #case entry index too large; we are missing entries
+      if len(self.log) <= prevLogIndex: #case entry index too large; we are missing entries
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
           'destination': msg['source'], 'success': False, 'term' : self.term})
       elif len(self.log) > 0 and self.log[prevLogIndex]['term'] != prevLogTerm: #case previous conflicting entries
