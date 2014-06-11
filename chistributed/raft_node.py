@@ -163,7 +163,7 @@ class Node:
    '''
   
   def handle_set(self,msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
     if msg['type'] == 'setResponseReply':
         self.req.send_json(msg['setResp'])
     else:
@@ -359,7 +359,8 @@ class Node:
   
   def call_election(self):
     if len(self.peer_names) > 0: #no need to poll if only one leader
-      self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
+      #self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
+      print self.name + ' is calling election'
       self.term += 1
       self.state = "candidate"
       self.accepted = []
@@ -381,7 +382,8 @@ class Node:
     return
 
   def begin_term(self):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
+    print self.name + ' is begining term'
     self.state = "leader"
     self.next_index = {}
     self.match_index = {}

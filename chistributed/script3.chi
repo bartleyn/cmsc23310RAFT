@@ -1,0 +1,34 @@
+script3: show eventual removal of conflicting data even in worst case scenario
+#set up 3 nodes
+start A --peer-names B,C
+start B --peer-names A,C
+start C --peer-names A,B
+#show inability to pass conflicting data normally
+set A data1 1
+set B data1 2
+set C data1 3
+get A data1
+get B data1
+get C data1
+#worst case scenario
+split a A
+split b B
+split c C
+#attempt to set and get conflicting data
+set A data2 1
+set B data2 2
+set C data2 3
+get A data2
+get B data2
+get C data2
+#recover
+recover a
+recover b
+recover c
+#show that data eventually becomes consistant
+get A data2
+get B data2
+get C data2
+get A data2
+get B data2
+get C data2

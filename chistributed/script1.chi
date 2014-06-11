@@ -1,14 +1,13 @@
-#script1: show ability to funciton even with 2/5 nodes down
-#set up 5 nodes
-start A --peer-names B,C,D,E
-start B --peer-names A,C,D,E
-start C --peer-names A,B,D,E
-start D --peer-names A,B,C,E
-start E --peer-names A,B,C,D
-#cut off two nodes from the group
-split minority A,B
+#script1: show ability to recover from fallen leader
+# and function even with 1/3 of nodes failed
+#set up 3 nodes
+start A --peer-names B,C
+start B --peer-names A,C
+start C --peer-names A,B
+#cut off leader from group
+split minority A
 #demonstrate majority still functioning
-set C data1 1
-after 5 {
-      get C data1
-}
+set B data1 1
+set B data2 2
+set B data3 3
+get B data1
