@@ -8,3 +8,4 @@ start C --peer-names A,B
 split minority A
 #demonstrate majority still functioning
 set B data1 1
+set B data2 2
