@@ -111,6 +111,7 @@ class Node:
       self.loop.add_callback(self.add_phantom_log_entry)
       self.loop.add_callback(self.leader_update_commitIndex)
 
+  '''
   def manage_pending_gets(self):
     if self.leaderId: #once we have a leader start handling pending gets
       for msgId in self.pending_gets.keys():
@@ -123,6 +124,7 @@ class Node:
 
     self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
     return
+  '''
 
   def handle_get(self, msg):
     if msg['key'] not in self.store:
