@@ -89,10 +89,10 @@ class Node:
     if msg['type'] == 'hello':
       self.handle_hello(msg)
     elif msg['type'] == 'get':
-      print self.name, " got get: ", msg
+      print self.name, self.state, " got get: ", msg
       self.handle_get(msg)
     elif msg['type'] == 'set':
-      print self.name, " got set: ", msg
+      print self.name, self.state, ' leaderId-', self.leaderId, " got set: ", msg
       self.handle_set(msg)
     elif msg['type'] == 'spam':
       self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
@@ -132,7 +132,9 @@ class Node:
     return
   
   def handle_set(self,msg):
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
+    print self.name + ' is handling set: ', msg
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
+    print self.name, ' is calling election because it got a set request '
     self.call_election()
     self.pending_sets[msg['id']] = msg
     return
@@ -211,6 +213,7 @@ class Node:
     return
 
   def handle_appendEntries(self, msg):
+    print self.name, ' got append from', self.leaderId
     if msg['term'] < self.term:
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
         'destination': msg['source'], 'success': False, 'term' : self.term})
@@ -238,6 +241,7 @@ class Node:
             while len(self.log) >= index:
               if len(self.log) in self.pending_sets2.keys():
                 setRequest = self.pending_sets2.pop(len(self.log))
+                print self.name, self.state, self.leaderId, 'sending setResponce error, request not committed'
                 self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'source':self.name, 'error': "log entry for set request not committed"})
             break
           else:
@@ -271,6 +275,7 @@ class Node:
     #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
+        print self.name, ' is calling an election because of no heartbeats!'
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
       else:
@@ -283,6 +288,11 @@ class Node:
         else: #no chance of winning election
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
+        print self.name, ' is calling an election because election timeout has occurred '
+        for ID in self.pending_sets.keys():
+          setRequest = self.pending_sets.pop(ID)
+          print self.name, self.state, 'timeout on election is causing failed setResponce'
+          self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'error': "failed to gain leadership upon set request"})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
@@ -330,11 +340,16 @@ class Node:
       match = self.match_index.values()
       match.sort()
       median = len(match)/2
+      #print self.name, ' median match value : ', match[2]
+      #print self.name, ' commit index! ', self.commit_index
+      #print self.name, ' match index: ', self.match_index
+      #print self.name, ' pending_sets2: ', self.pending_sets2
       if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
         self.commit_index = match[2]
       for index in range(old_commit_index, self.commit_index):
         if index in self.pending_sets2.keys():
           setRequest = self.pending_sets2.pop(index)
+          print self.name, self.state, self.leaderId, 'leader sending setResponce'
           self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'value': setRequest['value']})
     self.loop.add_timeout(self.loop.time() + update_commitIndex_timeout, self.leader_update_commitIndex)
        
@@ -357,7 +372,8 @@ class Node:
     #case candidate: do nothing
     if self.state == "follower":
       for ID in self.pending_sets.keys():
-        setRequest = self.pending_sets(ID)
+        setRequest = self.pending_sets.pop(ID)
+        print self.name, self.state, self.leaderId, 'failed to gain leadership, sending setResponce error'
         self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'error': "failed to gain leadership upon set request"})
     elif self.state == "leader":
       for ID in self.pending_sets.keys():
