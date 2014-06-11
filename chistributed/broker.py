@@ -499,7 +499,7 @@ class Broker:
     if not hasattr(self, "devnull"):
       self.devnull = open(os.devnull, "w")
 
-    f = open('out.txt', 'w')
+    f = open('out.txt', 'a')
     proc = subprocess.Popen(args, shell=True, stdout=f, stderr=f)
     
     self.node_pids[command['name']] = proc

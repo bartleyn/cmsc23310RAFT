@@ -1,37 +1,14 @@
-# example script1's purpose is to show how our implementation of Raft
-# functions as long as a majority of nodes do not go down.
-# and even when this occurs, when a node comes back up, it does not
-# cause conistancy problems
+#script1: show ability to funciton even with 2/5 nodes down
 #set up 5 nodes
 start A --peer-names B,C,D,E
 start B --peer-names A,C,D,E
 start C --peer-names A,B,D,E
 start D --peer-names A,B,C,E
 start E --peer-names A,B,C,D
-#demonstrate normal functionality
-set set1 1
-get set1
 #cut off two nodes from the group
 split minority A,B
-#demonstrate majority functionality
-set C set2 2
-get C set2
-#demonstrate inability to pass conflicting data
-set C set3 3
-set A set3 33
-join minority
-get C set3
-get A set3
-#cut nodes into 3 minority partitions
-split group1 A,B
-split group2 C,D
-#demonstrate lack of availability in partitions
-get A set1
-get C set1
-set B set4 4
-set D set5 5
-#but when the nodes come back up, everything is still handled
-join group1
-join group2
-get E set4
-get E set5
+#demonstrate majority still functioning
+set C data1 1
+after 5 {
+      get C data1
+}

@@ -87,8 +87,10 @@ class Node:
     if msg['type'] == 'hello':
       self.handle_hello(msg)
     elif msg['type'] == 'get':
+      print self.name, " got get: ", msg
       self.handle_get(msg)
     elif msg['type'] == 'set':
+      print self.name, " got set: ", msg
       self.handle_set(msg)
     elif msg['type'] == 'spam':
       self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
