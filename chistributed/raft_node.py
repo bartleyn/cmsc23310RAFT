@@ -52,8 +52,9 @@ class Node:
     self.match_index = None #re-initialize upon election: dictionary mapping node names to the highest log index replicated on that server
     self.leaderId = None # adress of curent leader
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
-    self.pending_sets = {}
-    self.pending_sets2 = {}
+    self.pending_sets = {} #those waiting to be applied to log
+    self.pending_sets2 = {} #those added to leader's log
+    self.completed_sets = {} #those committed or failed
     self.pending_gets = {}    
     #log code
     self.log = []
@@ -193,6 +194,10 @@ class Node:
       self.handle_set(msg)
     elif msg['type'] == 'getResponseReply':
       self.handle_get(msg)
+    elif msg['type'] == 'fwdSetResponse':
+      self.handle_fwdSetResponse(msg)
+    elif msg['type'] == 'fwdSetResponseReply':
+      self.handle_fwdSetResponseReply(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
 
@@ -203,6 +208,15 @@ class Node:
   def handle_fwdSetReply(self, msg):
     self.pending_sets.pop(msg['id'])
     return
+
+  def handle_fwdSetResponseReply(self, msg):
+    self.completed_sets.pop(msg['id'])
+
+  def handle_fwdSetResponse(self, msg):
+    set_request = msg['setRequest']
+    self.completed_sets[set_request[0]['id']] = set_request
+    self.req.send_json({'type': 'fwdSetResponseReply', 'destination': msg['source'],'term': self.term, 'id': set_request[0]['id'], 'source': self.name})
+
 
   def handle_fwdSet(self,msg):
     set_request = msg['setRequest']
@@ -280,15 +294,11 @@ class Node:
           elif self.log[index]['term'] != entry['term']: #remove any conflicting entry and any afterward
             while len(self.log) >= index:
               if len(self.log) in self.pending_sets2.keys():
-                failed_set = self.pending_sets2.pop(len(self.log))
-                print 'HEY THERE'
-                setResponse = {'type': 'setResponse', 'id': msg['id'], 'error': "log entry for set request not committed"}
-                self.req.send_json({'type': 'setResponseReply', 'setResp': setResponse, 'destination': failed_set['destination'], 'term': self.term})
-              print 'HEY THERE', self.log.pop()
+                setRequest = self.pending_sets2.pop(len(self.log))
+                completed_sets[setRequest['id']] = [setRequest, "failed"]
             break
           else:
-            new_entries.pop(0)
-            # What is this supposed to do?
+            new_entries.pop(0) #this pops matching entries
             index += 1
         for entry in new_entries: #append new entries
           self.log.append({'key': entry['key'], 'value': entry['value'], 'term': entry['term']})
@@ -297,8 +307,6 @@ class Node:
         if (msg['leaderCommit'] > self.commit_index):
           self.commit_index = min( msg['leaderCommit'], len (self.log))
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'logLastIndex': last_log_index, 'logLastTerm': last_log_term, 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
-
-
     return
   
 
@@ -317,7 +325,7 @@ class Node:
 
   def housekeeping(self):
     now = self.loop.time()
-   # self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
         self.call_election()
@@ -388,12 +396,11 @@ class Node:
     median = len(match)/2
     if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
       self.commit_index = match[2]
-    for i in range(old_commit_index, self.commit_index):
-      if i in self.pending_sets2.keys():
-        msg = self.pending_sets2.pop(i)
-        print 'LEADERId', self.leaderId, ": " , msg['destination'], " name: ", self.name
-        setResponse = {'type': 'setResponse', 'id': msg['id'], 'value': msg['value'], 'source': msg['destination']}
-        self.req.send_json({'type': 'setResponseReply', 'setResp': setResponse, 'destination': msg['destination'], 'term': self.term})
+    for index in range(old_commit_index, self.commit_index):
+      if index in self.pending_sets2.keys():
+        setRequest = self.pending_sets2.pop(index)
+        self.completed_sets[setRequest['id']] = [setRequest,"committed"]
+       
 
   def broadcast_heartbeat(self):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
@@ -415,16 +422,25 @@ class Node:
       if self.leaderId:
         for ID in self.pending_sets.keys():
           self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'setRequest':self.pending_sets[ID], 'term':self.term, 'source':self.name})
-    elif self.state == "leader" and self.pending_sets.keys():
+    elif self.state == "leader":
       for ID in self.pending_sets.keys():
         set_request = self.pending_sets.pop(ID)
-	print set_request['key']
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
         self.pending_sets2[self.last_log_index] = set_request
       self.log.append({'key': 'phantom', 'value': 0, 'term': self.term }) #add phantom entry to log; this makes commits or overwrites deterministic assuming that a leader is chosen
       self.next_index[self.name] = len(self.log)
       self.last_log_index = len(self.log) - 1
       self.last_log_term = self.term
+    for ID in self.completed_sets.keys():
+      setRequest = self.completed_sets[ID]
+      if setRequest[0]['destination'] == self.name:
+        if setRequest[1] == 'failed':
+          self.req.send_json({'type': 'setResponse', 'id': setRequest[0]['id'], 'error': "log entry for set request not committed"})
+        else:
+          self.req.send_json({'type': 'setResponse', 'id': setRequest[0]['id'], 'value': setRequest[0]['value']})
+        self.completed_sets.pop(ID)
+      else:
+        self.req.send_json({'type': 'fwdSetResponse', 'setRequest': setRequest, 'term': self.term, 'source': self.name,  'destination': setRequest[0]['destination']})
     self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_sets)
     return
 
