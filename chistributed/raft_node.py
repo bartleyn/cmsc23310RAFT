@@ -452,7 +452,6 @@ class Node:
       key = entry['key']
       value = entry['value']
       self.store[key] = value
-      print "added key,v pair ", key, value 
     self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
