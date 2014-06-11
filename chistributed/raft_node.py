@@ -103,7 +103,7 @@ class Node:
       self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
       self.loop.add_callback(self.apply_commits)
       self.loop.add_callback(self.manage_pending_sets)
-      self.loop.add_callback(self.manage_pending_gets)
+     # self.loop.add_callback(self.manage_pending_gets)
       # if we're a spammer, start spamming!
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
@@ -122,6 +122,12 @@ class Node:
     return
 
   def handle_get(self, msg):
+    if msg['key'] not in self.store:
+        self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'error': 'Value unknown'})
+    else:
+        self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]})
+    return
+    '''
     print "handle_get, msg!!!!!!!!!: ", msg
     if self.leaderId:
   
@@ -151,7 +157,7 @@ class Node:
     else: # leader Id not known, wait for election to process
         self.pending_gets[int(msg['id'])] = msg['message']
     return
-
+   '''
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
@@ -161,7 +167,7 @@ class Node:
         self.pending_sets[int(msg['id'])] = msg
      
     return
-
+   
 
   def handle_peerMsg(self, msg):
     msg_term = msg['term']
