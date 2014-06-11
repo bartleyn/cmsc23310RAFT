@@ -110,10 +110,6 @@ class Node:
       self.loop.add_callback(self.manage_pending_sets)
       self.loop.add_callback(self.add_phantom_log_entry)
       self.loop.add_callback(self.leader_update_commitIndex)
-     # self.loop.add_callback(self.manage_pending_gets)
-      # if we're a spammer, start spamming!
-      #if self.spammer:
-      #  self.loop.add_callback(self.send_spam)
 
   def manage_pending_gets(self):
     if self.leaderId: #once we have a leader start handling pending gets
@@ -134,37 +130,6 @@ class Node:
     else:
         self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]})
     return
-    '''
-    print "handle_get, msg!!!!!!!!!: ", msg
-    if self.leaderId:
-  
-      if msg['type'] == 'get':
-        if self.state == 'leader':
-          if msg['key'] in self.store: #leader directly responding to original get
-            print 'leader sending responce'
-            self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]})
-          else: # pend until data is known
-            print 'leader pending for data'
-            self.pending_gets[int(msg['id'])] = msg
-        else: #folower: forward original get
-          self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'origin_msg': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
-          
-      elif msg['type'] == 'forwardedGet':
-        if self.state == 'leader': #send back getResp if data known
-          if msg['key'] in self.store:
-            self.req.send_json({'type': 'getResp', 'destination': msg['origin_msg']['destination'], 'term': self.term, 'id': msg['id'], 'value': self.store[str(msg['key'])] })
-          else: # pend until data is known
-            self.pending_gets[int(msg['id'])] = msg
-        else: #follower: should just forward again
-          self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'origin_msg':msg['origin_msg'], 'key': msg['key'], 'term': self.term, 'id': msg['id']})
-
-      elif msg['type'] == 'getResp': #send get responce back to broker
-          self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': msg['value'] })
-
-    else: # leader Id not known, wait for election to process
-        self.pending_gets[int(msg['id'])] = msg['message']
-    return
-   '''
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
@@ -210,26 +175,6 @@ class Node:
     self.handle_get(self.pending_gets.pop(msg['id']))
     return
 
-  '''
-  def handle_fwdSetReply(self, msg):
-    self.pending_sets.pop(msg['id'])
-    return
-
-  def handle_fwdSetResponseReply(self, msg):
-    self.completed_sets.pop(msg['id'])
-
-  def handle_fwdSetResponse(self, msg):
-    set_request = msg['setRequest']
-    self.completed_sets[set_request[0]['id']] = set_request
-    self.req.send_json({'type': 'fwdSetResponseReply', 'destination': msg['source'],'term': self.term, 'id': set_request[0]['id'], 'source': self.name})
-
-
-  def handle_fwdSet(self,msg):
-    set_request = msg['setRequest']
-    self.pending_sets[set_request['id']] = set_request
-    self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'id': set_request['id'], 'source': self.name})
-
-  '''
   
   def handle_requestVote(self, rv):
     if self.state == "follower":
@@ -333,7 +278,7 @@ class Node:
 
   def housekeeping(self):
     now = self.loop.time()
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
         self.call_election()
@@ -363,7 +308,7 @@ class Node:
   def call_election(self):
     if len(self.peer_names) > 0: #no need to poll if only one leader
       #self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
-      print self.name + ' is calling election'
+      #print self.name + ' is calling election'
       self.term += 1
       self.state = "candidate"
       self.accepted = []

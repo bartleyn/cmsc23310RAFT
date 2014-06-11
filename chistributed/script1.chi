@@ -11,4 +11,3 @@ set B data1 1
 set B data2 2
 set B data3 3
 get B data1
-
