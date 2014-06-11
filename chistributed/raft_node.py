@@ -178,36 +178,28 @@ class Node:
   
   def handle_requestVote(self, rv):
     if self.state == "follower":
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER', 'node': self.name}})
       if rv['term'] < self.term:
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER THEIR TERM LESS', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
         return
       elif (self.voted_for == None or self.voted_for == self.name) and (rv['lastLogTerm'] >= self.last_log_term and rv['lastLogIndex'] >= self.last_log_index):
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWER WE CAN VOTE FOR THEM', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination': rv['source'], 'voteGranted': True, 'term' : self.term})
         self.voted_for = rv['source']
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE VOTE GRANTED', 'node': self.name}})
         self.last_update = self.loop.time()
       else:
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE FOLLOWE WE VOTED OR THEY HAVE INVALID LOG', 'node': self.name}})
         self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
       return
 
     else: # self.state == "candidate" or self.state == "leader":
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE CASE NOT FOLLOWER', 'node': self.name}})
       self.req.send_json({'type': 'requestVoteReply', 'source': self.name, 
           'destination':rv['source'], 'voteGranted': False, 'term' : self.term})
     return
 
   def handle_requestVoteReply(self, rvr):
     if self.state == "candidate": #case candidate
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE', 'node': self.name}})
       if rvr['voteGranted'] == True:
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE REQUEST VOTE REPLY CASE CANDIDATE VOTE GRANTED', 'node': self.name}})
         if (rvr['source'] not in self.accepted):
           self.accepted.append(rvr['source'])
           if len(self.accepted) >= self.qorum:
@@ -219,9 +211,7 @@ class Node:
     return
 
   def handle_appendEntries(self, msg):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES', 'node': self.name}})
     if msg['term'] < self.term:
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES THEIR TERM LESS THAN OURS', 'node': self.name}})
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
         'destination': msg['source'], 'success': False, 'term' : self.term})
       return
@@ -288,27 +278,20 @@ class Node:
     elif self.state == "candidate":
       if now < self.election_timeout: #case within an election but haven't won nor timeout occurred
         if len(self.refused) < self.qorum: #still chance of winning; poll more votes
-          #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REPOLL', 'node': self.name}})
           self.poll()
           self.loop.add_timeout(min(self.election_timeout, now + polling_timeout), self.housekeeping)
         else: #no chance of winning election
-          #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE REFUSED > QORUM', 'node': self.name}})
           self.loop.add_timeout(self.election_timeout, self.housekeeping)
       else: # election timeout has occurred
-        #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE CANDIDATE ELECTION TIMEOUT', 'node': self.name}})
         self.call_election()
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
       self.broadcast_heartbeat()
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER FINISHED BROADCAST', 'node': self.name}})
       self.loop.add_timeout(now + heartbeat_timeout, self.housekeeping)
     return
   
   def call_election(self):
     if len(self.peer_names) > 0: #no need to poll if only one leader
-      #self.req.send_json({'type': 'log', 'debug': {'event': 'CALL ELECTION', 'node': self.name}})
-      #print self.name + ' is calling election'
       self.term += 1
       self.state = "candidate"
       self.accepted = []
@@ -321,7 +304,6 @@ class Node:
     return
  
   def poll(self):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'POLL', 'node': self.name}})
     for peer in self.peer_names:
       if (peer not in self.refused) and (peer not in self.accepted):
         self.req.send_json({'type': 'requestVote', 'source': self.name, 
@@ -330,7 +312,6 @@ class Node:
     return
 
   def begin_term(self):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'BEGIN TERM', 'node': self.name}})
     print self.name + ' is begining term'
     self.state = "leader"
     self.next_index = {}
@@ -359,7 +340,6 @@ class Node:
        
 
   def broadcast_heartbeat(self):
-    #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
     for peer in self.peer_names:
       peerNextIndex = self.next_index[peer]
       myNextIndex = len(self.log)
