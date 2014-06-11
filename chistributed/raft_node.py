@@ -133,8 +133,8 @@ class Node:
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
-    self.pending_sets[msg['id']] = msg
     self.call_election()
+    self.pending_sets[msg['id']] = msg
     return
    
 
@@ -381,12 +381,12 @@ class Node:
         self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'error': "failed to gain leadership upon set request"})
     elif self.state == "leader":
       for ID in self.pending_sets.keys():
-        self.req.send_json({'type': 'log', 'debug': {'event': 'APPENDING SET TO LOG', 'node': self.name}})
         set_request = self.pending_sets.pop(ID)
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
         self.pending_sets2[self.last_log_index] = set_request
       self.next_index[self.name] = len(self.log)
       self.last_log_index = len(self.log) - 1
+      self.match_index[self.name] = self.last_log_index
       self.last_log_term = self.term
     self.loop.add_timeout(self.loop.time() + manage_pending_sets_timeout, self.manage_pending_sets)
     return
