@@ -109,55 +109,52 @@ class Node:
       #  self.loop.add_callback(self.send_spam)
 
   def manage_pending_gets(self):
-      if self.state == 'follower':
-         if self.leaderId:
-            for msgId in self.pending_gets.keys():
-              msg = self.pending_gets[msgId]
-              if msg['type'] == 'get':
-                 self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'message': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
-              else:
-                 self.req.send_json(msg['getResp'])
-                 self.pending_gets.pop(msgId)
+    if self.leaderId: #once we have a leader start handling pending gets
+      for msgId in self.pending_gets.keys():
+        msg = self.pending_gets[msgId]
+        if self.state == 'leader' and msg['key'] not in self.store: #if we are the leader, we are waiting for data
+          self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
+          return
+        self.handle_get(msg)
+        msg = self.pending_gets.pop(msgId)
 
-      elif self.state == 'leader':
-        for msgId in self.pending_gets.keys():
-           msg = self.pending_gets.pop(msgId)
-           print "leader is handling msg: ", msg
-           self.handle_get(msg)
-      self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
-      return
+    self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
+    return
 
   def handle_get(self, msg):
-    if msg['type'] == 'forwardedGet':
-      self.pending_gets[int(msg['id'])] = msg['message']
-      return
-
-    if self.state == 'leader' and msg['type'] == 'get' and msg['destination'] == self.name:
-       if msg['key'] not in self.store:
-          self.pending_gets[int(msg['id'])] = msg
-          return
-       else:
+    print "handle_get, msg!!!!!!!!!: ", msg
+    if self.leaderId:
+  
+      if msg['type'] == 'get':
+        if self.state == 'leader':
+          if msg['key'] in self.store: #leader directly responding to original get
+            print 'leader sending responce'
             self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]})
-            return
-    if self.state == 'leader':
-       print 'handle_get, leader, with msg: ', msg
-       if msg['key'] not in self.store:
-          self.pending_gets[int(msg['id'])] = msg
-          return
-       else:
-          getResponse = {'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]}
-          self.req.send_json({'type': 'getResponseReply', 'getResp': getResponse, 'destination' : msg['destination'], 'term': self.term, 'id': msg['id']})
+          else: # pend until data is known
+            print 'leader pending for data'
+            self.pending_gets[int(msg['id'])] = msg
+        else: #folower: forward original get
+          self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'origin_msg': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
           
-    #If node not the Leader
-      #redirect client to LeaderID ( either send message to broker or forward to leader)
-    #else
-      #send response with the value self.store[msg[key]]
-      #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-    elif self.state == 'follower':
-        self.pending_gets[int(msg['id'])] = msg
-        return
-    print 'store baby: ', self.store
+      elif msg['type'] == 'forwardedGet':
+        if self.state == 'leader': #send back getResp if data known
+          if msg['key'] in self.store:
+            self.req.send_json({'type': 'getResp', 'destination': msg['origin_msg']['destination'], 'term': self.term, 'id': msg['id'], 'value': self.store[str(msg['key'])] })
+          else: # pend until data is known
+            self.pending_gets[int(msg['id'])] = msg
+        else: #follower: should just forward again
+          self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'origin_msg':msg['origin_msg'], 'key': msg['key'], 'term': self.term, 'id': msg['id']})
+
+      elif msg['type'] == 'getResp': #send get responce back to broker
+        if msg['key'] in self.store:
+          self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': msg['value'] })
+        else: # pend until data is known
+            self.pending_gets[int(msg['id'])] = msg
+
+    else: # leader Id not known, wait for election to process
+        self.pending_gets[int(msg['id'])] = msg['message']
     return
+
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
