@@ -103,36 +103,51 @@ class Node:
       self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
       self.loop.add_callback(self.apply_commits)
       self.loop.add_callback(self.manage_pending_sets)
+      self.loop.add_callback(self.manage_pending_gets)
       # if we're a spammer, start spamming!
       #if self.spammer:
       #  self.loop.add_callback(self.send_spam)
 
-  def handle_get(self, msg):
-    if msg['type'] == 'getResponseReply':
-      self.req.send_json(msg['getResp'])
-      return
-    if msg['type'] == 'forwardedGet':
-      forwarded = 1
-      self.pending_gets[int(msg['id'])] = msg['message']
-    else:
-      forwarded = 0
+  def manage_pending_gets(self):
+      if self.state == 'follower':
+         if self.leaderId:
+            for msgId in self.pending_gets.keys():
+              msg = self.pending_gets.pop(msgId)
+              if msg['type'] == 'get':
+                 self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'message': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
+              else:
+                 self.req.send_json(msg['getResp'])
 
-    if self.state == 'follower':
-      if self.leaderId and not forwarded:
-        self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'message': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
-        self.pending_gets[int(msg['id'])] = msg
-    elif self.leaderId:
+      elif self.state == 'leader':
+        for msgId in self.pending_gets.keys():
+           msg = self.pending_gets.pop(msgId)
+           print "leader is handling msg: ", msg
+           self.handle_get(msg)
+      self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
+      return
+
+  def handle_get(self, msg):
+    if msg['type'] == 'forwardedGet':
+      self.pending_gets[int(msg['id'])] = msg['message']
+
+
+    if self.state == 'leader':
+       if msg['key'] not in self.store:
+          self.pending_gets[int(msg['id'])] = msg
+          return
+       else:
+          getResponse = {'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]}
+          self.req.send_json({'type': 'getResponseReply', 'getResp': getResponse, 'destination' : msg['destination'], 'term': self.term, 'id': msg['id']})
+          
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-      print 'store baby: ', self.store
-      if msg['key'] not in self.store:
-          self.pending_gets[int(msg['id'])] = msg
-      else:
-          getResponse = {'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]}
-          self.req.send_json({'type': 'getResponseReply', 'getResp': getResponse, 'destination' : msg['destination'], 'term': self.term})
+    elif self.state == 'follower':
+        self.pending_gets[int(msg['id'])] = msg
+        return
+    print 'store baby: ', self.store
     return
   
   def handle_set(self,msg):
