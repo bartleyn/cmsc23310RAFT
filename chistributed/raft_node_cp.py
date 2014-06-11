@@ -54,7 +54,12 @@ class Node:
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.pending_sets = {}
     self.pending_sets2 = {}
-    self.pending_gets = {}    
+    self.pending_gets = []    
+    '''
+    #things needed for Log Replication
+    #self.appendVotes = {} #dictionary mapping keys to lists of nodes that have Replied to Append; taken care of by match_index
+    #self.logQueue = {} #dictionary in same format as log that need to be replicated
+    '''
     #log code
     self.log = []
     # the log will be a list of dictionaries, with key for term (initialized at 1), and key for the command for the state machine
@@ -108,40 +113,62 @@ class Node:
       #  self.loop.add_callback(self.send_spam)
 
   def handle_get(self, msg):
-    if msg['type'] == 'getResponseReply':
-      self.req.send_json(msg['getResp'])
-      return
     if msg['type'] == 'forwardedGet':
       forwarded = 1
-      self.pending_gets[int(msg['id'])] = msg['message']
     else:
       forwarded = 0
 
     if self.state == 'follower':
-      if self.leaderId and not forwarded:
-        self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'message': msg, 'key': msg['key'], 'term': self.term, 'id': msg['id']})
-        self.pending_gets[int(msg['id'])] = msg
-    elif self.leaderId:
+      if self.leaderId:
+        self.req.send_json({'type': 'forwardedGet', 'destination': self.leaderId, 'key': msg['key'], 'term': self.term})
+        self.pending_gets.append(msg)
+    else:
     #If node not the Leader
       #redirect client to LeaderID ( either send message to broker or forward to leader)
     #else
       #send response with the value self.store[msg[key]]
       #self.send_message('getResponse', self.name, msg['source'], True, msg['key'], self.store[msg['key']], msg['id'])
-      print 'store baby: ', self.store
-      if msg['key'] not in self.store:
-          self.pending_gets[int(msg['id'])] = msg
-      else:
-          getResponse = {'type': 'getResponse', 'id': msg['id'], 'value': self.store[str(msg['key'])]}
-          self.req.send_json({'type': 'getResponseReply', 'getResp': getResponse, 'destination' : msg['destination'], 'term': self.term})
+      self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': self.store[msg['key']]})
     return
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
-    if msg['type'] == 'setResponseReply':
-        self.req.send_json(msg['setResp'])
-    else:
-        self.pending_sets[int(msg['id'])] = msg
+    self.pending_sets[int(msg['id'])] = msg
      
+    '''
+    if self.state == "leader":
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST AS LEADER', 'node': self.name}})
+      self.log.append({'key': msg['key'], 'value': msg['value'], 'term': self.term})
+      self.next_index[self.name] = len(self.log)
+      
+      
+      self.logQueue[msg['key']] = msg['value'] #add request to queue
+      self.appendVotes[msg['key']] = [] #make room to record replies
+      self.appendVotes[msg['key']].append(self.name) #add leader's vote
+      if not forwarded:
+        self.req.send_json({'type': 'log', 'debug': {'event': 'SEND SET RESPONSE', 'node': self.name}})
+        self.req.send_json({'type': "setResponse", 'id': msg['id'], 'value': msg['value']}) #send setResponse # <- this should be done after commiting
+      self.req.send_json({'type': 'appendEntries', 'destination': self.peer_names,
+                          'term': self.term, 'source': self.name, 'prevLogIndex': self.last_log_index,
+                          'prevLogTerm': self.last_log_term, 'entries':
+                            [{'key': msg['key'], 'value': msg['value'],
+                              'term': self.term}], 'leaderCommit': self.commit_index}) #send appendEntries messages to all folowers
+
+    elif self.leaderId:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST IF THERE IS LEADER', 'node': self.name}})
+      self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'key': msg['key'], 'value': msg['value'], 'term': self.term})
+
+      if not forwarded: #just incase leader changes require more than one forwarding
+        self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']}) #if the leader crashes this might cause problems
+
+    else:
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET REQUEST WITH NO LEADER', 'node': self.name, 'state': self.state}})
+      self.pending_sets[msg['id']] = msg
+      #I'm thinking it might be better to block here until a leader has been elected.
+      if self.state == "leader" and forwarded:
+    self.req.send_json({'type': 'receivedFwdSetReq', 'source': self.name, 'destination': msg['source'], 'term': self.term, 
+        'id': msg['id'], 'key': msg['key'], 'value': msg['value']})
+    '''
     return
 
 
@@ -163,18 +190,8 @@ class Node:
       self.handle_requestVoteReply(msg)
     elif msg['type'] == 'appendEntriesReply':
       self.handle_appendEntriesReply(msg)
-    elif msg['type'] == 'forwardedGet':
-      self.handle_get(msg)
-    elif msg['type'] == 'setResponseReply':
-      self.handle_set(msg)
-    elif msg['type'] == 'getResponseReply':
-      self.handle_get(msg)
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
-
-  def handle_fwdGet(self, msg):
-    self.handle_get(self.pending_gets.pop(msg['id']))
-    return
 
   def handle_fwdSetReply(self, msg):
     self.pending_sets.pop(msg['id'])
@@ -183,7 +200,7 @@ class Node:
   def handle_fwdSet(self,msg):
     set_request = msg['setRequest']
     self.pending_sets[set_request['id']] = set_request
-    self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'id': set_request['id'], 'source': self.name})
+    self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'id': set_request['id']})
 
   def handle_requestVote(self, rv):
     if self.state == "follower":
@@ -237,6 +254,8 @@ class Node:
     self.state = "follower"
     self.last_update = self.loop.time()
     self.leaderId = msg['source']
+    while len(self.pending_gets) > 0:
+       self.handle_get(self.pending_gets.pop(0))
     if msg['entries']:
       prevLogIndex = msg['prevLogIndex']
       prevLogTerm = msg['prevLogTerm']
@@ -257,10 +276,8 @@ class Node:
             while len(self.log) >= index:
               if len(self.log) in self.pending_sets2.keys():
                 failed_set = self.pending_sets2.pop(len(self.log))
-                print 'HEY THERE'
-                setResponse = {'type': 'setResponse', 'id': msg['id'], 'error': "log entry for set request not committed"}
-                self.req.send_json({'type': 'setResponseReply', 'setResp': setResponse, 'destination': failed_set['destination'], 'term': self.term})
-              print 'HEY THERE', self.log.pop()
+                self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'error': "log entry for set request not comitted"})
+              print self.log.pop()
             break
           else:
             new_entries.pop(0)
@@ -275,6 +292,41 @@ class Node:
         self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'logLastIndex': last_log_index, 'logLastTerm': last_log_term, 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
 
 
+      '''
+      if (len(self.log) < msg['prevLogIndex'] ):
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LOG LENGTH SMALLER THAN MSG', 'node': self.name}})
+        self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'success': False, 'term': self.term, 'prevLogIndex': self.last_log_index})
+        return
+      print len(self.log), "=?=", msg['prevLogIndex']
+      if ( len(self.log) > 0 and self.log[msg['prevLogIndex']]['term'] != msg['prevLogTerm'] ):
+        self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES MISMATCH TERMS', 'node': self.name, 'msgTerm': msg['prevLogTerm'], 'curterm': self.log[msg['prevLogIndex']]['term']}})
+        self.log = self.log[:msg['prevLogIndex']]
+        self.last_log_index = msg['prevLogIndex']
+        self.last_log_term = msg['prevLogTerm']
+
+        self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'success': False, 'term': self.term, 'prevLogIndex': self.last_log_index})
+        return
+      else:
+        if ( len(self.log) > 0 and msg['leaderCommit'] > 0 and log[msg['leaderCommit']]['term'] != msg['term'] ):
+          self.log = self.log[:self.commit_index]
+          for entry in msg['entries']:
+            self.log.append(entry)
+            self.commit_index += 1
+          self.last_log_index = len(log) - 1
+          self.last_log_term = log[-1]['term']
+          self.commit_index = len(log) -1
+          self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES LEADER COMMITTED BUT MISMATCH TERMS ', 'node': self.name}})
+          self.req.send_json({'type': 'appendEntriesReply', 'success': True, 'source': self.name, 'destination': msg['source'], 
+            'key': self.log[self.last_log_index]['key'], 'term': self.term }) 
+      for entry in msg['entries']:
+        self.log.append(entry)
+      self.last_log_index = len(self.log) - 1
+      self.last_log_term = self.log[-1]['term']
+      self.commit_index = len(self.log) - 1
+      self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 'destination': msg['source'], 'prevLogIndex': self.last_log_index, 'prevLogTerm': self.last_log_term, 
+        'key': self.log[self.last_log_index]['key'], 'term':self.term, 'commitIndex': self.commit_index, 'success': True })
+      self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE APPEND ENTRIES!', 'node': self.name, 'key': self.log[self.last_log_index]['key'], 'value': self.log[self.last_log_index]['value']}})
+    ''' 
     return
   
 
@@ -289,11 +341,36 @@ class Node:
   # We should add the message ID to each of these messages (or some means of keeping track of set request msg ids), since we aren't sending the setResponse until we commit
       else: #failure
         self.next_index[msg['source']] += -1
+        '''
+        self.next_index[msg['source']] = msg['commitIndex'] + 1
+        if self.appendVotes.has_key(msg['key']): #make sure we are voting on this key
+        # V is this supposed to be the source name or dest name? I'm assuming source
+        # Yes, this is the leader recording which followers have responded, which is the source of the Reply message.
+          if msg['source'] not in self.appendVotes[msg['key']]: #dont allow repeat voting
+            self.appendVotes[msg['key']].append(msg['source'])
+            if len(self.appendVotes[msg['key']]) == self.qorum: #if qorum of followers have responded
+              #self.log[self.term][msg['key']] = msg['value'] # comit value to log
+              # ^ I think this line will look more like this:
+              self.log.append({'term': self.term,'key': msg['key'], 'value': msg['value']})
+              self.last_log_index = len(self.log) - 1
+              self.last_log_term = self.term
+              for peer in self.next_index.keys():
+                next_index = self.next_index[peer]
+                if next_index < self.last_log_index:
+                  self.req.send_json({'type': 'appendEntries', 'prevLogIndex': self.next_index[msg['source']], 'prevTerm': self.last_log_term, 'leaderCommit': self.commit_index, 'source': self.name, 'destination': peer, 'entries': self.log[self.next_index[aer['source']]], 'leaderId': self.leaderId, 'term': self.term})
+                  #send commit messages
+                  #should we bother removing from logqueue and appendvotes here?
+        else: #not sucess
+          print 'hi', msg['success']  
+          #force follower to copy log
+    else:
+      print "Warning, " + self.name + "recieved appendEntriesReply while not leader"
+        '''
       return
 
   def housekeeping(self):
     now = self.loop.time()
-   # self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
+    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
         self.call_election()
@@ -354,6 +431,8 @@ class Node:
       self.match_index[peer] = -1
     self.match_index[self.name] = len(self.log) - 1
     self.leaderId = self.name
+    while len(self.pending_gets) > 0:
+      self.handle_get(self.pending_gets.pop(0))
     #send append entries RPC to all others
     return
 
@@ -367,9 +446,7 @@ class Node:
     for i in range(old_commit_index, self.commit_index):
       if i in self.pending_sets2.keys():
         msg = self.pending_sets2.pop(i)
-        print 'LEADERId', self.leaderId, ": " , msg['destination'], " name: ", self.name
-        setResponse = {'type': 'setResponse', 'id': msg['id'], 'value': msg['value'], 'source': msg['destination']}
-        self.req.send_json({'type': 'setResponseReply', 'setResp': setResponse, 'destination': msg['destination'], 'term': self.term})
+        self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': msg['value']})
 
   def broadcast_heartbeat(self):
     #self.req.send_json({'type': 'log', 'debug': {'event': 'BROADCAST HEARTBEAT', 'node': self.name, 'peers' : self.peer_names}})
@@ -391,10 +468,9 @@ class Node:
       if self.leaderId:
         for ID in self.pending_sets.keys():
           self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'setRequest':self.pending_sets[ID], 'term':self.term, 'source':self.name})
-    elif self.state == "leader" and self.pending_sets.keys():
+    elif self.state == "leader":
       for ID in self.pending_sets.keys():
         set_request = self.pending_sets.pop(ID)
-	print set_request['key']
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
         self.pending_sets2[self.last_log_index] = set_request
       self.log.append({'key': 'phantom', 'value': 0, 'term': self.term }) #add phantom entry to log; this makes commits or overwrites deterministic assuming that a leader is chosen
@@ -411,8 +487,7 @@ class Node:
       entry = self.log[self.last_applied]
       key = entry['key']
       value = entry['value']
-      self.store[key] = value
-      print "added key,v pair ", key, value 
+      self.store[key] = value 
     self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
