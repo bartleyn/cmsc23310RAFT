@@ -325,7 +325,7 @@ class Node:
 
   def housekeeping(self):
     now = self.loop.time()
-    self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
+    #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING, DEBUG LOG', 'node': self.name, 'log':self.log}})
     if self.state == "follower":
       if now - self.last_update > term_timeout: #case of no heartbeats
         self.call_election()
@@ -399,7 +399,7 @@ class Node:
     for index in range(old_commit_index, self.commit_index):
       if index in self.pending_sets2.keys():
         setRequest = self.pending_sets2.pop(index)
-        self.completed_sets[setRequest['id']] = [setRequest,"committed"]
+        self.completed_sets[setRequest['id']] = [setRequest, "committed"]
        
 
   def broadcast_heartbeat(self):
@@ -433,7 +433,7 @@ class Node:
       self.last_log_term = self.term
     for ID in self.completed_sets.keys():
       setRequest = self.completed_sets[ID]
-      if setRequest[0]['destination'] == self.name:
+      if setRequest[0]['destination'][0] == self.name:
         if setRequest[1] == 'failed':
           self.req.send_json({'type': 'setResponse', 'id': setRequest[0]['id'], 'error': "log entry for set request not committed"})
         else:
