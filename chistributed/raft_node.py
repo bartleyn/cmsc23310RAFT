@@ -13,6 +13,8 @@ max_election_timeout = 0.3
 polling_timeout = 0.05
 heartbeat_timeout = 0.05
 commit_timeout = 0.05
+phantom_log_timeout = 0.5
+update_commitIndex_timeout = 0.05
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
@@ -54,7 +56,6 @@ class Node:
     self.election_timeout = self.loop.time() + random.uniform(min_election_timeout, max_election_timeout)
     self.pending_sets = {} #those waiting to be applied to log
     self.pending_sets2 = {} #those added to leader's log
-    self.completed_sets = {} #those committed or failed
     self.pending_gets = {}    
     #log code
     self.log = []
@@ -106,6 +107,8 @@ class Node:
       self.loop.add_callback(self.housekeeping) #NOTE: I believe this is threadsafe but am not certain; be wary of race conditions 
       self.loop.add_callback(self.apply_commits)
       self.loop.add_callback(self.manage_pending_sets)
+      self.loop.add_callback(self.add_phantom_log_entry)
+      self.loop.add_callback(self.leader_update_commitIndex)
      # self.loop.add_callback(self.manage_pending_gets)
       # if we're a spammer, start spamming!
       #if self.spammer:
@@ -164,11 +167,8 @@ class Node:
   
   def handle_set(self,msg):
     self.req.send_json({'type': 'log', 'debug': {'event': 'HANDLE SET', 'node': self.name, 'state': self.state}})
-    if msg['type'] == 'setResponseReply':
-        self.req.send_json(msg['setResp'])
-    else:
-        self.pending_sets[int(msg['id'])] = msg
-     
+    self.pending_sets[msg['id']] = msg
+    self.call_election()
     return
    
 
@@ -208,7 +208,7 @@ class Node:
   def handle_fwdGet(self, msg):
     self.handle_get(self.pending_gets.pop(msg['id']))
     return
-
+'''
   def handle_fwdSetReply(self, msg):
     self.pending_sets.pop(msg['id'])
     return
@@ -226,6 +226,8 @@ class Node:
     set_request = msg['setRequest']
     self.pending_sets[set_request['id']] = set_request
     self.req.send_json({'type': 'forwardedSetReply', 'destination': msg['source'],'term': self.term, 'id': set_request['id'], 'source': self.name})
+
+'''
 
   def handle_requestVote(self, rv):
     if self.state == "follower":
@@ -299,7 +301,7 @@ class Node:
             while len(self.log) >= index:
               if len(self.log) in self.pending_sets2.keys():
                 setRequest = self.pending_sets2.pop(len(self.log))
-                completed_sets[setRequest['id']] = [setRequest, "failed"]
+                self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'source':self.name, 'error': "log entry for set request not committed"})
             break
           else:
             new_entries.pop(0) #this pops matching entries
@@ -351,7 +353,6 @@ class Node:
         self.loop.add_timeout(min(self.election_timeout,now + polling_timeout), self.housekeeping)
     else: #case leader
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER', 'node': self.name}})
-      self.leader_update_commitIndex()
       self.broadcast_heartbeat()
       #self.req.send_json({'type': 'log', 'debug': {'event': 'HOUSEKEEPING CASE LEADER FINISHED BROADCAST', 'node': self.name}})
       self.loop.add_timeout(now + heartbeat_timeout, self.housekeeping)
@@ -394,16 +395,18 @@ class Node:
     return
 
   def leader_update_commitIndex(self):
-    old_commit_index = self.commit_index
-    match = self.match_index.values()
-    match.sort()
-    median = len(match)/2
-    if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
-      self.commit_index = match[2]
-    for index in range(old_commit_index, self.commit_index):
-      if index in self.pending_sets2.keys():
-        setRequest = self.pending_sets2.pop(index)
-        self.completed_sets[setRequest['id']] = [setRequest, "committed"]
+    if self.state == 'leader':
+      old_commit_index = self.commit_index
+      match = self.match_index.values()
+      match.sort()
+      median = len(match)/2
+      if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
+        self.commit_index = match[2]
+      for index in range(old_commit_index, self.commit_index):
+        if index in self.pending_sets2.keys():
+          setRequest = self.pending_sets2.pop(index)
+          self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'value': setRequest['value']})
+    self.add_timeout(self.loop.time + update_commitIndex_timeout, self.leader_update_commitIndex)
        
 
   def broadcast_heartbeat(self):
@@ -422,31 +425,25 @@ class Node:
     return
 
   def manage_pending_sets(self):
+    #case candidate: do nothing
     if self.state == "follower":
-      if self.leaderId:
-        for ID in self.pending_sets.keys():
-          self.req.send_json({'type': 'forwardedSet', 'destination': self.leaderId, 'setRequest':self.pending_sets[ID], 'term':self.term, 'source':self.name})
+      for ID in self.pending_sets.keys():
+        setRequest = pending_sets[ID]
+        self.req.send_json({'type': 'setResponse', 'id': setRequest['id'], 'error': "failed to gain leadership upon set request"})
     elif self.state == "leader":
       for ID in self.pending_sets.keys():
         set_request = self.pending_sets.pop(ID)
         self.log.append({'key': set_request['key'], 'value': set_request['value'], 'term': self.term })
         self.pending_sets2[self.last_log_index] = set_request
-      self.log.append({'key': 'phantom', 'value': 0, 'term': self.term }) #add phantom entry to log; this makes commits or overwrites deterministic assuming that a leader is chosen
       self.next_index[self.name] = len(self.log)
       self.last_log_index = len(self.log) - 1
       self.last_log_term = self.term
-    for ID in self.completed_sets.keys():
-      setRequest = self.completed_sets[ID]
-      if setRequest[0]['destination'][0] == self.name:
-        if setRequest[1] == 'failed':
-          self.req.send_json({'type': 'setResponse', 'id': setRequest[0]['id'], 'error': "log entry for set request not committed"})
-        else:
-          self.req.send_json({'type': 'setResponse', 'id': setRequest[0]['id'], 'value': setRequest[0]['value']})
-        self.completed_sets.pop(ID)
-      else:
-        self.req.send_json({'type': 'fwdSetResponse', 'setRequest': setRequest, 'term': self.term, 'source': self.name,  'destination': setRequest[0]['destination']})
-    self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_sets)
     return
+
+  def add_phantom_log_entry():
+    if self.state == "leader":
+      self.log.append({'key': 'phantom', 'value': 0, 'term': self.term }) #add phantom entry to log; this makes commits or overwrites deterministic assuming that a leader is chosen
+    self.loop.add_timeout(self.loop.time() + phantom_log_timeout, self.add_phantom_log_entry)
 
 
   def apply_commits(self): #commit each log entry until the next commit index
