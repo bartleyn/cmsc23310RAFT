@@ -20,9 +20,9 @@ get A data1
 get A data4
 get A data5
 #partition recovers
-recover a
-recover b
-recover c
+join a
+join b
+join c
 #show that set eventually suceedes
 #and data is eventually consistant
 get A data4

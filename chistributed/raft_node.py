@@ -215,7 +215,7 @@ class Node:
     return
 
   def handle_appendEntries(self, msg):
-    print self.name, ' got append from', self.leaderId
+    print self.name, ' got append from', msg['source']
     if msg['term'] < self.term:
       self.req.send_json({'type': 'appendEntriesReply', 'source': self.name, 
         'destination': msg['source'], 'success': False, 'term' : self.term})
