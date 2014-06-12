@@ -18,7 +18,7 @@ update_commitIndex_timeout = 0.05
 manage_pending_sets_timeout = 0.05
 
 class Node:
-  def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
+  def __init__(self, node_name, pub_endpoint, router_endpoint, peer_names):
     self.loop = ioloop.ZMQIOLoop.instance()
     self.context = zmq.Context()
 
@@ -39,7 +39,6 @@ class Node:
     self.req.on_recv(self.handle_broker_message)
 
     self.name = node_name
-    self.spammer = spammer
     self.peer_names = peer_names
 
     self.store = {}
@@ -69,16 +68,10 @@ class Node:
       signal.signal(sig, self.shutdown)
 
   def start(self):
-    '''
-    Simple manual poller, dispatching received messages and sending those in
-    the message queue whenever possible.
-    '''
     self.loop.start()
-  
+
   def handle_broker_message(self, msg_frames):
-    '''
-    Nothing important to do here yet.
-    '''
+    # handled in handle
     pass
 
   def handle(self, msg_frames):
@@ -94,8 +87,6 @@ class Node:
     elif msg['type'] == 'set':
       print self.name, self.state, ' leaderId-', self.leaderId, " got set: ", msg
       self.handle_set(msg)
-    elif msg['type'] == 'spam':
-      self.req.send_json({'type': 'log', 'spam': msg, 'this':'message'})
     else:
       self.handle_peerMsg(msg)
     return
@@ -110,21 +101,6 @@ class Node:
       self.loop.add_callback(self.manage_pending_sets)
       self.loop.add_callback(self.add_phantom_log_entry)
       self.loop.add_callback(self.leader_update_commitIndex)
-
-  '''
-  def manage_pending_gets(self):
-    if self.leaderId: #once we have a leader start handling pending gets
-      for msgId in self.pending_gets.keys():
-        msg = self.pending_gets[msgId]
-        if self.state == 'leader' and msg['key'] not in self.store: #if we are the leader, we are waiting for data
-          self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
-          return
-        self.handle_get(msg)
-        msg = self.pending_gets.pop(msgId)
-
-    self.loop.add_timeout(self.loop.time() + 0.1, self.manage_pending_gets)
-    return
-  '''
 
   def handle_get(self, msg):
     if msg['key'] not in self.store:
@@ -342,10 +318,6 @@ class Node:
       match = self.match_index.values()
       match.sort()
       median = len(match)/2
-      #print self.name, ' median match value : ', match[2]
-      #print self.name, ' commit index! ', self.commit_index
-      #print self.name, ' match index: ', self.match_index
-      #print self.name, ' pending_sets2: ', self.pending_sets2
       if match[median] > self.commit_index and self.log[match[median]]['term'] == self.term: #match[2] is the 2nd largest value in match_index_values, i.e. the median. 
         self.commit_index = match[2]
       for index in range(old_commit_index, self.commit_index):
@@ -405,17 +377,6 @@ class Node:
     self.loop.add_timeout(self.loop.time() + commit_timeout, self.apply_commits)
     return
 
-  def send_spam(self):
-    '''
-    Periodically send spam, with a counter to see which are dropped.
-    '''
-    if not hasattr(self, 'spam_count'):
-      self.spam_count = 0
-    self.spam_count += 1
-    t = self.loop.time()
-    self.req.send_json({'type': 'spam', 'id': self.spam_count, 'timestamp': t, 'source': self.name, 'destination': self.peer_names, 'value': 42})
-    self.loop.add_timeout(t + 1, self.send_spam)
-
   def shutdown(self, sig, frame):
     self.loop.stop()
     self.sub_sock.close()
@@ -435,9 +396,6 @@ if __name__ == '__main__':
   parser.add_argument('--node-name',
       dest='node_name', type=str,
       default='test_node')
-  parser.add_argument('--spammer',
-      dest='spammer', action='store_true')
-  parser.set_defaults(spammer=False)
   parser.add_argument('--peer-names',
       dest='peer_names', type=str,
       default='')
@@ -446,4 +404,4 @@ if __name__ == '__main__':
     args.peer_names = args.peer_names.split(',')
   else:
     args.peer_names = []
-  Node(args.node_name, args.pub_endpoint, args.router_endpoint, args.spammer, args.peer_names).start()
+  Node(args.node_name, args.pub_endpoint, args.router_endpoint, args.peer_names).start()
