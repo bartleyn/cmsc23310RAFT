@@ -1,7 +1,8 @@
-#script3: test dropped messages to client server                                #set up 3 nodes
+#script4: test dropped messages from client server
+#set up 3 nodes
 start A --peer-names B,C
 start B --peer-names A,C
 start C --peer-names A,B
 #test with messages dropped
-drop 3 to A
+drop 500 from A
 set A data1 1

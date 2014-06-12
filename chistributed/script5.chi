@@ -1,0 +1,12 @@
+#script5: test get on stale data
+#set up 3 nodes
+start A --peer-names B,C
+start B --peer-names A,C
+start C --peer-names A,B
+#set data to change
+set A data1 1
+#partition a
+split a A
+#change data
+set B data1 42
+get A data1
