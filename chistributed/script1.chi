@@ -1,12 +1,18 @@
-#script1: show ability to recover from fallen leader
+#script1: test ability to recover from fallen leader
 # and function even with 1/3 of nodes failed
 #set up 3 nodes
 start A --peer-names B,C
 start B --peer-names A,C
 start C --peer-names A,B
 #cut off leader from group
-split minority A
-#demonstrate majority still functioning
-set B data1 1
-set B data1 2
-get B data1
+after 10{
+      split leader A
+#test majority still functioning
+after 30{
+      set C data1 1
+after 30 {
+      get B data1
+      get C data1
+}
+}
+}

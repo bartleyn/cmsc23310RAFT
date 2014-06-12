@@ -1,30 +1,19 @@
-#script2: show ability to recover from worst case scenario
-# note that sets will be guaranteed to get through
-# but gets will return most available data
+#script2: show ability to replicate data to nodes that were down
 #set up 3 nodes
 start A --peer-names B,C
 start B --peer-names A,C
 start C --peer-names A,B
-#set values to be checked later
-set data1 1
-set data2 2
-set data3 3
-#worst case scenario: all nodes seperated
-split a A
-split b B
+#crash minority of nodes
 split c C
-#attempt to get and set data
-set A data4 4
-set B data5 5
-get A data1
-get A data4
-get A data5
-#partition recovers
-recover a
-recover b
-recover c
-#show that set eventually suceedes
-#and data is eventually consistant
-get A data4
-get B data4
-get C data4
+#set data that c will miss
+set A data 42
+#recover C
+after 20{
+      join c
+}
+#show that the data replicated to C despite failure
+after 50 {
+      get A data
+      get B data
+      get C data
+}

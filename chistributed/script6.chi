@@ -1,0 +1,46 @@
+#script5: test ability to function in and recover from complete partition
+#set up 3 nodes
+start A --peer-names B,C
+start B --peer-names A,C
+start C --peer-names A,B
+#set values to be checked later
+set data1 1
+set data2 2
+set data3 3
+#worst case scenario: all nodes separated
+after 30{
+      split a A
+      split b B
+      split c C
+#attempt to get and set data
+	 get data1
+	 get data2
+	 get data3
+	 set data4 4
+	 set data5 5
+	 set data6 6
+	 get data4
+	 get data5
+	 get data6
+#complete partition recovers
+	  join a
+	  join b
+	  join c
+#test normal functionality and how much data remains after recovery
+after 30 {
+      set data7 7
+      set data8 8
+      set data9 9      
+after 30 {
+      get data1
+      get data2
+      get data3
+      get data4
+      get data5
+      get data6
+      get data7
+      get data8
+      get data9
+}
+}
+}
