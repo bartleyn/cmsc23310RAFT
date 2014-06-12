@@ -8,7 +8,7 @@ split c C
 #set data that c will miss
 set A data 42
 #recover C
-after 20{
+after 20 {
       join c
 }
 #show that the data replicated to C despite failure
