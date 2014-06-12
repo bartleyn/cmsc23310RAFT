@@ -6,17 +6,23 @@ Joshua Stevens-Stein: jstevensstein@gmail.com
 
 WODUNIT
 	Josh:
-		-leadership functionality Pseudocode 
-		-leadership functionality code
-		-second and third implementations of set (the version with the two generals issue, the call election version)
-		-conception and implementation of phantom log entries
-		-
+		-Leadership functionality Pseudocode 
+		-Leadership functionality code
+		-Second and third implementations of set (the version with the two generals issue, the call election version)
+		-Conception and implementation of phantom log entries
 
 	Aaron:
-		-log replication pseudocode
-		-first implementation of set
-		-co-worked on second implementation of get
-		-testing scripts
+		-Log replication pseudocode
+		-First implementation of set
+		-Co-worked on second implementation of get
+		-Testing scripts
+	
+	Nathan
+		-Applying entries from the log to the state machine, pseudocode and implementation
+		-Working with Aaron on the second implementation of the get requests
+		-Working on forwarding client requests to the leader, before we decided to opt for availability
+		-Designing the structure of the log
+		-Testing scripts
 		
 
 How to run a node:
