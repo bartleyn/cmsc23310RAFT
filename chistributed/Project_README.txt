@@ -12,5 +12,14 @@ WODUNIT
 		-conception and implementation of phantom log entries
 		-
 
+	
+	Nathan
+		-Applying entries from the log to the state machine, pseudocode and implementation
+		-Working with Aaron on the second implementation of the get requests
+		-Working on forwarding client requests to the leader, before we decided to opt for availability
+		-Designing the structure of the log
+		-Testing scripts
+		
+
 How to run a node:
 	python broker.py -e "python raft_node.py" -s <script name>
